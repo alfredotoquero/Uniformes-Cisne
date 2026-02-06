@@ -19,6 +19,7 @@ include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/otros/seguridad.php");
         <input type="hidden" name="idproducto" id="idproducto" value="<?= $_GET["idproducto"] ?>">
         <input type="hidden" name="producto" id="producto" value="<?= $_GET["producto"] ?>">
         <input type="hidden" name="idcategoriaproducto" id="idcategoriaproducto" value="<?= $_GET["idcategoriaproducto"] ?>">
+        <input type="hidden" name="idtipoproducto" id="idtipoproducto" value="<?= $_GET["idtipoproducto"] ?? "0" ?>">
         <input type="hidden" name="cantidad" id="cantidad" value="<?= $_GET["cantidad"] ?>">
         <input type="hidden" name="precio" id="precio" value="<?= $_GET["precio"] ?>">
         <div class="row">
