@@ -1,0 +1,47 @@
+# Logs
+*.log
+
+# Ignorar PDFs
+*.pdf
+*.PDF
+
+# Ignorar XMLs
+*.xml
+*.XML
+
+# Ignorar Excel
+*.xls
+*.xlsx
+*.xlsm
+*.csv
+*.XLS
+*.XLSX
+*.XLSM
+*.CSV
+
+# Ignorar archivos de texto
+*.txt
+*.TXT
+
+# Cache / temporales
+/tmp/
+/cache/
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Backups
+*.sql
+*.SQL
+*.zip
+*.ZIP
+
+# htaccess
+.htaccess
+
+# Ignorar ciertas carpetas y archivos
+assets/php/otros/con.php
+assets/php/otros/sesion.php
+imagenes/*
+txts/*
