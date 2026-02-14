@@ -3628,7 +3628,7 @@ class Pedidos
             $idemisor = mysqli_real_escape_string($this->con,$post["slcEmisor"]);
             $comentarios = mysqli_real_escape_string($this->con,$post["txtComentarios"]);
             $idmetodopago = mysqli_real_escape_string($this->con,$post["slcMetodoPago"]);
-            $idformapago = mysqli_real_escape_string($this->con,$post["slcFormaPago"]);
+            $idformapago = ($idmetodopago==1) ? 21 : mysqli_real_escape_string($this->con,$post["slcFormaPago"]);
             $correo = mysqli_real_escape_string($this->con,$post["txtCorreo"]);
 
             if($idrazonsocial=="" || $idrazonsocial==0){
@@ -3761,9 +3761,7 @@ class Pedidos
             while($tmp = mysqli_fetch_assoc($result)){
                 $cadena_utf8 = mb_convert_encoding($tmp["producto"], 'UTF-8', 'auto');
 
-                $transliterator = Transliterator::createFromRules(':: Latin-ASCII; :: NFD; :: [:Nonspacing Mark:] Remove; :: NFC;', Transliterator::FORWARD);
-
-                $cadena_sin_acentos = $transliterator->transliterate($cadena_utf8);
+                $cadena_sin_acentos = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $cadena_utf8);
                 
                 $valor_unitario = ($pedido["incluyeiva"]==1) ? ($tmp["precio"]/(1+($pedido["tasaiva"]/100))) : $tmp["precio"];
 
@@ -3954,6 +3952,11 @@ class Pedidos
             }
 
         }catch(Exception $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje" => "Código 111 ".$e->getMessage()
+            );
+        }catch(Throwable $e){
             $respuesta = array(
                 "respuesta" => "ERROR",
                 "mensaje" => "Código 111 ".$e->getMessage()
