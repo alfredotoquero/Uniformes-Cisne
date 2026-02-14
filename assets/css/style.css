@@ -1,9 +1,18 @@
 /*
 Custom css
 */
-/* .select2-container{
-    z-index: 99999 !important;
-} */
+/* Fix para select2 en fancybox */
+.select2-container--open {
+    z-index: 999999 !important;
+}
+
+.select2-dropdown {
+    z-index: 999999 !important;
+}
+
+.select2-drop {
+    z-index: 999999 !important;
+}
 
 #divLoader {
 	position: fixed;
