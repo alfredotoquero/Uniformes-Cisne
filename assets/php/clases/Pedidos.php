@@ -3869,6 +3869,7 @@ class Pedidos
                     subtotal,
                     iva,
                     total,
+                    saldo,
                     uuid,
                     timbrado
                 ) values (
@@ -3882,6 +3883,7 @@ class Pedidos
                     '".$folio."',
                     '".$response["subtotal"]."',
                     '".($response["total"]-$response["subtotal"])."',
+                    '".$response["total"]."',
                     '".$response["total"]."',
                     '".$response["uuid"]."',
                     '".$response["fechaTimbrado"]."'
