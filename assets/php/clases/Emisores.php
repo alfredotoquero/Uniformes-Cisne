@@ -134,6 +134,9 @@ class Emisores{
                 // se crea la carpeta del emisor
                 mkdir($_SERVER["DOCUMENT_ROOT"]."/emisores/".$rfc."/sat", 0775, true);
                 mkdir($_SERVER["DOCUMENT_ROOT"]."/emisores/".$rfc."/facturas", 0775, true);
+                mkdir($_SERVER["DOCUMENT_ROOT"]."/emisores/".$rfc."/pagos", 0775, true);
+                mkdir($_SERVER["DOCUMENT_ROOT"]."/emisores/".$rfc."/notas_credito", 0775, true);
+                mkdir($_SERVER["DOCUMENT_ROOT"]."/emisores/".$rfc."/notas_debito", 0775, true);
 
                 // se suben los archivos del certificado y la llave
                 $post["idemisor"] = $idemisor;
