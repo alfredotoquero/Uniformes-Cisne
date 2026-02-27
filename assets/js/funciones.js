@@ -2126,11 +2126,17 @@ function mostrar2(value) {
 	if (value == 2) {
 		$("#textProducto").show();
 		$("#selectProducto").hide();
+		$("#selectTipoProducto").show();
 		$("#slcCategoria").prop("disabled", false);
+		// Reducir tamaño del precio unitario para que el botón no salte de línea
+		$("#divPrecio").removeClass("col-md-2").addClass("col-md-1");
 	} else {
 		$("#selectProducto").show();
 		$("#textProducto").hide();
+		$("#selectTipoProducto").hide();
 		$("#slcCategoria").prop("disabled", true);
+		// Restaurar tamaño original del precio unitario
+		$("#divPrecio").removeClass("col-md-1").addClass("col-md-2");
 	}
 }
 
@@ -2152,6 +2158,13 @@ function agregarProductoCotizacion() {
 			"Debes indicar una Categoria.",
 			"error",
 			"slcCategoria"
+		);
+	} else if ($("#slcOrigen").val() == 2 && $("#slcTipoProducto").val() == 0) {
+		swalFocus(
+			"ATENCION",
+			"Debes indicar un Tipo de Producto.",
+			"error",
+			"slcTipoProducto"
 		);
 	} else if ($("#slcOrigen").val() == 2 && $("#txtProducto").val() == "") {
 		swalFocus("ATENCION", "Debes indicar un Producto.", "error", "txtProducto");
@@ -2178,6 +2191,8 @@ function agregarProductoCotizacion() {
 							: "") +
 						"&idcategoriaproducto=" +
 						$("#slcCategoria").val() +
+						"&idtipoproducto=" +
+						$("#slcTipoProducto").val() +
 						"&cantidad=" +
 						$("#txtCantidad").val() +
 						"&precio=" +
@@ -2210,6 +2225,13 @@ function editarProductoCotizacion() {
 			"error",
 			"slcCategoria"
 		);
+	} else if ($("#slcOrigen").val() == 2 && $("#slcTipoProducto").val() == 0) {
+		swalFocus(
+			"ATENCION",
+			"Debes indicar un Tipo de Producto.",
+			"error",
+			"slcTipoProducto"
+		);
 	} else if ($("#slcOrigen").val() == 2 && $("#txtProducto").val() == "") {
 		swalFocus("ATENCION", "Debes indicar un Producto.", "error", "txtProducto");
 	} else if (
@@ -2234,7 +2256,9 @@ function editarProductoCotizacion() {
 					"&producto=" +
 					encodeURIComponent($("#txtProducto").val()) +
 					"&idcategoriaproducto=" +
-					data.idcategoriaproducto +
+					$("#slcCategoria").val() +
+					"&idtipoproducto=" +
+					($("#slcTipoProducto").val() ?? "0") +
 					"&cantidad=" +
 					$("#txtCantidad").val() +
 					"&precio=" +
@@ -2298,10 +2322,12 @@ function cargarDatosProducto(idpartida) {
 			$("#txtProducto").val(data.producto);
 			$("#txtPrecio").val(data.precio);
 			$("#slcCategoria").val(data.idcategoriaproducto);
+			$("#slcTipoProducto").val(data.idtipoproducto ?? "0");
 
 			$("#slcProducto").select2();
 			$("#slcProducto").val(data.idproducto);
-			mostrar($("#slcOrigen").val());
+			$("#slcTipoProducto").select2();
+			mostrar2($("#slcOrigen").val());
 			$("#txtCantidad").focus();
 
 			// ocultar boton agregar y mostrar boton editar

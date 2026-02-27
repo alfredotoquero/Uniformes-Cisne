@@ -491,6 +491,7 @@ class Cotizaciones
                         idproducto,
                         producto,
                         idcategoriaproducto,
+                        idtipoproducto,
                         cantidad,
                         precio,
                         serigrafia1,
@@ -516,6 +517,7 @@ class Cotizaciones
                     idproducto,
                     producto,
                     idcategoriaproducto,
+                    idtipoproducto,
                     cantidad,
                     precio,
                     serigrafia1,
@@ -735,13 +737,14 @@ class Cotizaciones
                 foreach ($partidas["partidas"] as $partida) {
                     $query = "
                     insert into
-                        trcotizacionproductos 
+                        trcotizacionproductos
                         (
                             idcotizacion,
                             idpedido,
                             idproducto,
                             producto,
                             idcategoriaproducto,
+                            idtipoproducto,
                             cantidad,
                             precio,
                             serigrafia1,
@@ -769,6 +772,7 @@ class Cotizaciones
                             '" . $partida["idproducto"] . "',
                             '" . $partida["producto"] . "',
                             '" . $partida["idcategoriaproducto"] . "',
+                            '" . ($partida["idtipoproducto"] ?? "0") . "',
                             '" . $partida["cantidad"] . "',
                             '" . $partida["precio"] . "',
                             '" . $partida["serigrafia1"] . "',
@@ -856,6 +860,7 @@ class Cotizaciones
                             idproducto,
                             producto,
                             idcategoriaproducto,
+                            idtipoproducto,
                             idtalla,
                             talla,
                             idcolor,
@@ -870,6 +875,7 @@ class Cotizaciones
                             '" . $desglose["idproducto"] . "',
                             '" . $desglose["producto"] . "',
                             '" . $desglose["idcategoriaproducto"] . "',
+                            '" . ($desglose["idtipoproducto"] ?? "0") . "',
                             '" . $desglose["idtalla"] . "',
                             '" . $desglose["talla"] . "',
                             '" . $desglose["idcolor"] . "',
@@ -1474,6 +1480,7 @@ class Cotizaciones
         $idproducto = mysqli_real_escape_string($this->con, $post["idproducto"]);
         $producto = mysqli_real_escape_string($this->con, $post["producto"]);
         $idcategoriaproducto = mysqli_real_escape_string($this->con, $post["idcategoriaproducto"]);
+        $idtipoproducto = mysqli_real_escape_string($this->con, $post["idtipoproducto"] ?? "0");
         $cantidad = mysqli_real_escape_string($this->con, $post["cantidad"]);
         $precio = mysqli_real_escape_string($this->con, $post["precio"]);
 
@@ -1504,6 +1511,7 @@ class Cotizaciones
                     idproducto,
                     producto,
                     idcategoriaproducto,
+                    idtipoproducto,
                     cantidad,
                     precio,
                     serigrafia1,
@@ -1530,6 +1538,7 @@ class Cotizaciones
                     '" . $idproducto . "',
                     '" . $producto . "',
                     '" . $idcategoriaproducto . "',
+                    '" . $idtipoproducto . "',
                     '" . $cantidad . "',
                     '" . $precio . "',
                     '" . $serigrafia1 . "',
@@ -1583,6 +1592,7 @@ class Cotizaciones
         $idproducto = mysqli_real_escape_string($this->con, $post["idproducto"]);
         $producto = mysqli_real_escape_string($this->con, $post["producto"]);
         $idcategoriaproducto = mysqli_real_escape_string($this->con, $post["idcategoriaproducto"]);
+        $idtipoproducto = mysqli_real_escape_string($this->con, $post["idtipoproducto"] ?? "0");
         $cantidad = mysqli_real_escape_string($this->con, $post["cantidad"]);
         $precio = mysqli_real_escape_string($this->con, $post["precio"]);
         $serigrafia1 = mysqli_real_escape_string($this->con, $post["txtSerigrafia1"]);
@@ -1611,6 +1621,7 @@ class Cotizaciones
                 idproducto = '" . $idproducto . "',
                 producto = '" . $producto . "',
                 idcategoriaproducto = '" . $idcategoriaproducto . "',
+                idtipoproducto = '" . $idtipoproducto . "',
                 cantidad = '" . $cantidad . "',
                 precio = '" . $precio . "',
                 serigrafia1 = '" . $serigrafia1 . "',
@@ -2286,7 +2297,7 @@ class Cotizaciones
             $partida = mysqli_fetch_assoc(mysqli_query($this->con, $query));
 
             if ($partida["idtmp"] > 0) {
-                $respuesta = array("respuesta" => "OK", "idpartida" => $partida["idtmp"], "idproducto" => $partida["idproducto"], "producto" => $partida["producto"], "idcategoriaproducto" => $partida["idcategoriaproducto"], "cantidad" => $partida["cantidad"], "precio" => $partida["precio"], "serigrafia1" => $partida["serigrafia1"], "serigrafia2" => $partida["serigrafia2"], "serigrafia3" => $partida["serigrafia3"], "personalizadonumero" => $partida["personalizadonumero"], "personalizadonombre" => $partida["personalizadonombre"], "bordado1" => $partida["bordado1"], "bordado2" => $partida["bordado2"], "bordado3" => $partida["bordado3"], "bordado4" => $partida["bordado4"], "bordadoespecial" => $partida["bordadoespecial"], "personalizado1linea" => $partida["personalizado1linea"], "personalizado2lineas" => $partida["personalizado2lineas"], "personalizado3lineas" => $partida["personalizado3lineas"], "sxl" => $partida["sxl"], "xl2" => $partida["2xl"], "xl3" => $partida["3xl"], "observaciones" => $partida["observaciones"]);
+                $respuesta = array("respuesta" => "OK", "idpartida" => $partida["idtmp"], "idproducto" => $partida["idproducto"], "producto" => $partida["producto"], "idcategoriaproducto" => $partida["idcategoriaproducto"], "idtipoproducto" => $partida["idtipoproducto"], "cantidad" => $partida["cantidad"], "precio" => $partida["precio"], "serigrafia1" => $partida["serigrafia1"], "serigrafia2" => $partida["serigrafia2"], "serigrafia3" => $partida["serigrafia3"], "personalizadonumero" => $partida["personalizadonumero"], "personalizadonombre" => $partida["personalizadonombre"], "bordado1" => $partida["bordado1"], "bordado2" => $partida["bordado2"], "bordado3" => $partida["bordado3"], "bordado4" => $partida["bordado4"], "bordadoespecial" => $partida["bordadoespecial"], "personalizado1linea" => $partida["personalizado1linea"], "personalizado2lineas" => $partida["personalizado2lineas"], "personalizado3lineas" => $partida["personalizado3lineas"], "sxl" => $partida["sxl"], "xl2" => $partida["2xl"], "xl3" => $partida["3xl"], "observaciones" => $partida["observaciones"]);
             } else {
                 $respuesta = array("respuesta" => "ERROR", "tipo" => "mensaje", "mensaje" => "No se encontró la partida.");
             }

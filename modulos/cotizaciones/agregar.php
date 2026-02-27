@@ -8,6 +8,7 @@ include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Sucursales.php");
 include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Cotizaciones.php");
 include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Clientes.php");
 include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Tiendas.php");
+include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/TiposProducto.php");
 
 $claseCategorias = new Categorias();
 $claseProductos = new Productos();
@@ -15,6 +16,7 @@ $claseSucursales = new Sucursales();
 $claseCotizaciones = new Cotizaciones();
 $claseClientes = new Clientes();
 $claseTiendas = new Tiendas();
+$claseTiposProducto = new TiposProducto();
 
 $idusuario = $_SESSION["usuario"]["idusuario"];
 
@@ -219,6 +221,22 @@ $_SESSION["authToken"]=sha1(uniqid(microtime(), true));
                                         ?>
                                     </select>
                                 </div>
+                                <div class="col-12 col-md-2" style="display:none;" id="selectTipoProducto">
+                                    <label for="" class="mb-2">Tipo de Producto</label>
+                                    <select name="slcTipoProducto" id="slcTipoProducto" class="form-control select2">
+                                        <option value="0">--Selecciona un Tipo--</option>
+                                        <?
+                                        $tiposproducto = $claseTiposProducto->obtenerTiposProducto($_POST);
+                                        if($tiposproducto["respuesta"] == "OK"){
+                                            while($tipoproducto = mysqli_fetch_assoc($tiposproducto["tiposproducto"])){
+                                                ?>
+                                                <option value="<?= $tipoproducto["idtipoproducto"]; ?>"><?= $tipoproducto["nombre"]; ?></option>
+                                                <?
+                                            }
+                                        }
+                                        ?>
+                                    </select>
+                                </div>
                                 <div class="col-12 col-md-3" id="selectProducto">
                                     <label for="" class="mb-2">Producto</label>
                                     <input type="hidden" name="idpartida" id="idpartida">
@@ -235,11 +253,11 @@ $_SESSION["authToken"]=sha1(uniqid(microtime(), true));
                                         ?>
                                     </select>
                                 </div>
-                                <div class="col-12 col-md-3" style="display:none;" id="textProducto">
+                                <div class="col-12 col-md-2" style="display:none;" id="textProducto">
                                     <label for="" class="mb-2">Producto</label>
                                     <input type="text" name="txtProducto" id="txtProducto" class="form-control">
                                 </div>
-                                <div class="col-12 col-md-2">
+                                <div class="col-12 col-md-2" id="divPrecio">
                                     <label for="" class="mb-2">Precio Unitario</label>
                                     <input type="text" name="txtPrecio" id="txtPrecio" value="" placeholder="0.00" class="form-control maskNumber">
                                 </div>
