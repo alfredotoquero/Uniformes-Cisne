@@ -27,7 +27,7 @@ if(!empty($pedido["idtienda"])){
 
     $emisores = $e->obtenerEmisores(array())["emisores"];
 
-    if (!empty($pedido["correocliente"])) {
+    if (!empty($pedido["correocliente"]) && $pedido["idcliente"] == 0) {
         $correoPrecargado = $pedido["correocliente"];
     } elseif ($pedido["idcliente"] > 0) {
         $clienteData = $c->obtenerCliente(["idcliente" => $pedido["idcliente"]])["cliente"];
