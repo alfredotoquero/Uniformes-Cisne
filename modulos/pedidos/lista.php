@@ -12,6 +12,7 @@ $pedidos = $clasePedidos->obtenerPedidos($_POST);
 $claseUsuarios = new Usuarios();
 
 $idusuario = $_SESSION["usuario"]["idusuario"];
+$facturarPedidos = $claseUsuarios->verificarPermiso($idusuario, 1)["respuesta"] == "OK";
 
 if ($pedidos["respuesta"] == "OK") {
 ?>
@@ -72,7 +73,7 @@ if ($pedidos["respuesta"] == "OK") {
                         <td class="text-end">
                             <a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/pedidos/informacion.php?idpedido=<?= $pedido["idpedido"] ?>" class="btn btn-info btn-sm mb-1" title="Informacion"><i class="uil uil-info-circle"></i></a>
                             <?
-                            if(empty($pedido["idfactura"]) && in_array($idusuario,array(1,3))){
+                            if(empty($pedido["idfactura"]) && $facturarPedidos){
                             ?>
                             <a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/pedidos/facturar.php?idpedido=<?= $pedido["idpedido"] ?>" class="btn btn-info btn-sm mb-1" title="Facturar"><i class="uil uil-file-alt"></i></a>
                             <?

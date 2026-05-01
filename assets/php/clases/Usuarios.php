@@ -488,7 +488,40 @@ class Usuarios
         }
     }
 
-    /** 
+    public function obtenerPermisosSeccion($post)
+    {
+        $idusuario = mysqli_real_escape_string($this->con, $post["idusuario"]);
+        $idseccion = mysqli_real_escape_string($this->con, $post["idseccion"]);
+
+        try {
+            $query = "
+            select
+                p.*,
+                if(up.idpermiso is not null, 1, 0) as tiene_permiso
+            from
+                tpermisos p
+                left join trusuariopermisos up on up.idpermiso = p.idpermiso and up.idusuario = '" . $idusuario . "'
+            where
+                p.idseccion = '" . $idseccion . "'
+            order by
+                p.permiso
+            ";
+
+            $result = mysqli_query($this->con, $query);
+            $permisos = array();
+            while ($row = mysqli_fetch_assoc($result)) {
+                $permisos[] = $row;
+            }
+
+            $respuesta = array("respuesta" => "OK", "permisos" => $permisos);
+        } catch (Exception $e) {
+            $respuesta = array("respuesta" => "EXCEPTION", "mensaje" => "Codigo ###:" . $e->getMessage());
+        } finally {
+            return $respuesta;
+        }
+    }
+
+    /**
      * Tiene Permiso. Revisa si el usuario tiene permiso para esta seccion
      * 
      * @access public
@@ -579,7 +612,8 @@ class Usuarios
             }
 
             $correcto = true;
-            foreach ($permisos as $id => $permiso) {
+            foreach ($permisos as $permiso) {
+                $sololectura = isset($lecturas[$permiso]) ? $lecturas[$permiso] : 0;
                 $query = "
                 insert into
                     trusuariosecciones
@@ -592,7 +626,7 @@ class Usuarios
                     (
                         '" . $idusuario . "',
                         '" . $permiso . "',
-                        '" . $lecturas[$id] . "'
+                        '" . $sololectura . "'
                     )
                 ";
 
@@ -603,14 +637,32 @@ class Usuarios
                 }
             }
 
-            // $query = "
-            // update
-            //     tusuarios
-            // set
-            //     tipousuario = '".$_POST["chkAlmacen"].$_POST["chkDiseno"].$_POST["chkSerigrafia"].$_POST["chkBordado"]."'
-            // where
-            //     idusuario = '".$idusuario."'
-            // ";
+            $queryDelPermisos = "
+            delete from
+                trusuariopermisos
+            where
+                idusuario = '" . $idusuario . "'
+            ";
+
+            $this->claseQueries->guardarQuery($queryDelPermisos);
+            mysqli_query($this->con, $queryDelPermisos);
+
+            $permisosEspecificos = isset($post["chkPermisosEspecificos"]) ? $post["chkPermisosEspecificos"] : array();
+            foreach ($permisosEspecificos as $idpermiso) {
+                $idpermiso = mysqli_real_escape_string($this->con, $idpermiso);
+                $queryPerm = "
+                insert into
+                    trusuariopermisos (idusuario, idpermiso)
+                values
+                    ('" . $idusuario . "', '" . $idpermiso . "')
+                ";
+
+                $this->claseQueries->guardarQuery($queryPerm);
+
+                if (!mysqli_query($this->con, $queryPerm)) {
+                    $correcto = false;
+                }
+            }
 
             if ($correcto) {
 
@@ -677,8 +729,44 @@ class Usuarios
     }
 
     /**
+     * Verificar Permiso. Revisa si el usuario tiene el permiso indicado
+     *
+     * @access public
+     * @param int $idusuario
+     * @param int $idpermiso
+     * @return array
+     */
+    public function verificarPermiso($idusuario, $idpermiso)
+    {
+        $idusuario = mysqli_real_escape_string($this->con, $idusuario);
+        $idpermiso = mysqli_real_escape_string($this->con, $idpermiso);
+
+        try {
+            $query = "
+            select
+                *
+            from
+                trusuariopermisos
+            where
+                idusuario = '" . $idusuario . "'
+                and idpermiso = '" . $idpermiso . "'
+            ";
+
+            if (mysqli_num_rows(mysqli_query($this->con, $query))) {
+                $respuesta = array("respuesta" => "OK");
+            } else {
+                $respuesta = array("respuesta" => "ERROR");
+            }
+        } catch (Exception $e) {
+            $respuesta = array("respuesta" => "EXCEPTION", "mensaje" => "Codigo ###:" . $e->getMessage());
+        } finally {
+            return $respuesta;
+        }
+    }
+
+    /**
      * Es Administrador. Revisa si tiene permiso administrador
-     * 
+     *
      * @access public
      * @param array $idusuario
      * @return boolean
