@@ -43,7 +43,8 @@ class Facturas{
                 a.uuid,
                 a.status,
                 a.timbrado,
-                a.registro
+                a.registro,
+                g.idpedido
             from
                 tfacturas a
             left join
@@ -65,7 +66,11 @@ class Facturas{
             left join
                 sat_tcatformaspago f
             on
-                f.idformapago = a.idformapago";
+                f.idformapago = a.idformapago
+            left join
+                tpedidos g
+            on
+                g.idfactura = a.idfactura";
 
             $condiciones = array();
 
@@ -202,6 +207,64 @@ class Facturas{
             $respuesta = array(
                 "respuesta" => "ERROR",
                 "mensaje" => $e->getMessage()
+            );
+        }finally{
+            return $respuesta;
+        }
+    }
+
+    public function getZIPData($idfactura){
+        try{
+            $idfactura = mysqli_real_escape_string($this->con,$idfactura);
+
+            $query = "
+            select
+                a.uuid,
+                a.serie,
+                a.folio,
+                b.nombre as cliente,
+                c.rfc as rfc_emisor
+            from
+                tfacturas a
+            left join
+                tclientes b
+            on
+                b.idcliente = a.idcliente
+            left join
+                temisores c
+            on
+                c.idemisor = a.idemisor
+            where
+                a.idfactura = '".$idfactura."'";
+
+            $factura = mysqli_fetch_assoc(mysqli_query($this->con,$query));
+
+            if(!$factura){
+                throw new Exception("No se encontró la factura");
+            }
+
+            $base = $_SERVER["DOCUMENT_ROOT"]."/emisores/".$factura["rfc_emisor"]."/facturas/".$factura["uuid"];
+
+            if(!file_exists($base.".pdf")){
+                throw new Exception("No se encontró el PDF de la factura");
+            }
+            if(!file_exists($base.".xml")){
+                throw new Exception("No se encontró el XML de la factura");
+            }
+
+            $respuesta = array(
+                "respuesta" => "OK",
+                "uuid"      => $factura["uuid"],
+                "serie"     => $factura["serie"],
+                "folio"     => $factura["folio"],
+                "cliente"   => $factura["cliente"],
+                "pdf_path"  => $base.".pdf",
+                "xml_path"  => $base.".xml"
+            );
+        }catch(Exception $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje"   => $e->getMessage()
             );
         }finally{
             return $respuesta;
