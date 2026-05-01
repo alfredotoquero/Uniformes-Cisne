@@ -70,25 +70,29 @@ class Pedidos
         $where .= (($busqueda != "") ? " and (cliente like '%" . $busqueda . "%' or idpedido like '%" . $busqueda . "%' or contacto like '%" . $busqueda . "%' or usuario like '%" . $busqueda . "%')" : "");
         $where .= (($fechainicial != "") ? " and date(fecha) >= '" . $fechainicial . "'" : "");
         $where .= (($fechafinal != "") ? " and date(fecha) <= '" . $fechafinal . "'" : "");
-        $where .= (($status != "" && $status != 0) ? " and status = '" . $status . "'" : "");
+        $where .= (($status != "" && $status != 0) ? " and vpedidos.status = '" . $status . "'" : "");
         $where .= (($idsucursal != "") ? " and idsucursal = '" . $idsucursal . "'" : "");
-        $where .= (($tipopedido == "activos") ? " and (((statusproduccion='S' or statusproduccion='' or statusproduccion='P' or (status!='E' and status!='C' and statuspago=1)) and status!='C' and status!='E') or (status='A' and statusproduccion='T'))" : "");
-        $where .= (($tipopedido == "finalizados") ? (($tipo == 1) ? " and (status='E' or status='C') " : (($tipo == "T") ? " and status = 'E'" : " and status = '" . $tipo . "'")) : "");
+        $where .= (($tipopedido == "activos") ? " and (((statusproduccion='S' or statusproduccion='' or statusproduccion='P' or (vpedidos.status!='E' and vpedidos.status!='C' and statuspago=1)) and vpedidos.status!='C' and vpedidos.status!='E') or (vpedidos.status='A' and statusproduccion='T'))" : "");
+        $where .= (($tipopedido == "finalizados") ? (($tipo == 1) ? " and (vpedidos.status='E' or vpedidos.status='C') " : (($tipo == "T") ? " and vpedidos.status = 'E'" : " and vpedidos.status = '" . $tipo . "'")) : "");
         $where .= (($idcliente > 0) ? " and idcliente = '" . $idcliente . "'" : "");
         $where .= ((!empty($idtienda)) ? " and idcliente in (select idcliente from tclientes where idtienda = '" . $idtienda . "')" : "");
 
         try {
             $query = "
             select
-                *
+                vpedidos.*,
+                tfacturas.serie as factura_serie,
+                tfacturas.folio as factura_folio
             from
                 vpedidos
+            left join
+                tfacturas on tfacturas.idfactura = vpedidos.idfactura
             where
                 1=1
                 " . $where . "
             order by
                 idpedido desc
-            limit 
+            limit
                 " . (($pagina - 1) * $regpagina) . "," . $regpagina . "
             ";
 
@@ -3917,6 +3921,14 @@ class Pedidos
                     idpedido = '".$idpedido."'";
                 mysqli_query($this->con,$query);
 
+                if ($idcliente > 0) {
+                    $correosArr = array_values(array_filter(array_map('trim', explode(',', $correo))));
+                    $correoMain = mysqli_real_escape_string($this->con, $correosArr[0] ?? '');
+                    $correosAdicionales = mysqli_real_escape_string($this->con, implode(',', array_slice($correosArr, 1)));
+                    $query = "update tclientes set correo = '".$correoMain."', correos_adicionales = '".$correosAdicionales."' where idcliente = '".$idcliente."'";
+                    mysqli_query($this->con, $query);
+                }
+
                 //Se envia la factura por correo
                 $folio = $serie."-".$folio;
                 $fecha = date("Y-m-d");
@@ -3927,13 +3939,13 @@ class Pedidos
 
                 $this->claseCorreos = new Correos();
 
+                $correos = array_filter(array_map('trim', explode(',', $correo)));
+
                 $respuesta = $this->claseCorreos->enviarCorreo(array(
                     "idtienda" => $pedido["idtienda"],
                     "asunto" => "Envío de factura",
                     "mensaje" => $cuerpo,
-                    "correos" => array(
-                        $correo
-                    ),
+                    "correos" => array_values($correos),
                     "adjuntos" => array(
                         array(
                             "nombre" => $response["uuid"].".xml",

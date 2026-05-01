@@ -27,6 +27,16 @@ if(!empty($pedido["idtienda"])){
 
     $emisores = $e->obtenerEmisores(array())["emisores"];
 
+    if (!empty($pedido["correocliente"])) {
+        $correoPrecargado = $pedido["correocliente"];
+    } elseif ($pedido["idcliente"] > 0) {
+        $clienteData = $c->obtenerCliente(["idcliente" => $pedido["idcliente"]])["cliente"];
+        $partes = array_filter([$clienteData["correo"], $clienteData["correos_adicionales"]]);
+        $correoPrecargado = implode(",", $partes);
+    } else {
+        $correoPrecargado = "";
+    }
+
     unset($_SESSION["authToken"]);
     $_SESSION["authToken"]=sha1(uniqid(microtime(), true));
     ?>
@@ -106,7 +116,8 @@ if(!empty($pedido["idtienda"])){
             </div>
             <div class="mb-3">
                 <label for="txtCorreo" class="form-label">Correo electrónico<span>*</span></label>
-                <input type="email" class="form-control requerido" name="txtCorreo" id="txtCorreo" placeholder="Ingresa el correo electrónico" autocomplete="off" data-mensajeerror="Debes indicar el correo electrónico" value="<?= $pedido["correocliente"] ?>">
+                <input type="text" class="form-control requerido" name="txtCorreo" id="txtCorreo" placeholder="Ingresa el correo electrónico" autocomplete="off" data-mensajeerror="Debes indicar el correo electrónico" value="<?= $correoPrecargado ?>" pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}(\s*,\s*[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})*" title="Ingresa uno o más correos electrónicos válidos separados por coma">
+                <small class="text-muted d-block mt-1">Para enviar a múltiples destinatarios, separa los correos con coma (ej: correo1@ejemplo.com, correo2@ejemplo.com)</small>
             </div>
             <div class="mb-3">
                 <label for="slcMetodoPago" class="form-label">Método de pago<span>*</span></label>
@@ -147,7 +158,7 @@ if(!empty($pedido["idtienda"])){
                     ?>
                 </select>
             </div>
-            <button type="button" onclick="validarFormulario('formFacturar');" class="btn btn-primary">Facturar</button>
+            <button type="button" onclick="validarFormFacturar();" class="btn btn-primary">Facturar</button>
         </form>
     </div>
     <script>
@@ -185,6 +196,18 @@ if(!empty($pedido["idtienda"])){
             $("#slcRazonSocial").addClass("requerido");
             $(".nuevaRazonSocial").removeClass("requerido");
         }
+    }
+
+    function validarFormFacturar(){
+        var correos = $("#txtCorreo").val().split(",");
+        var regexCorreo = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+        for(var i = 0; i < correos.length; i++){
+            if(!regexCorreo.test(correos[i].trim())){
+                swalFocus("Error", "El correo electrónico '"+correos[i].trim()+"' no es válido", "error", "txtCorreo");
+                return;
+            }
+        }
+        validarFormulario('formFacturar');
     }
 
     function validarMetodoPago(){
