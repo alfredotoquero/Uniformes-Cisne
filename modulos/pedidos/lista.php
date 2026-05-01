@@ -27,6 +27,7 @@ if ($pedidos["respuesta"] == "OK") {
                     <th>Abonado</th>
                     <th>Restante</th>
                     <th>Fecha</th>
+                    <th>Factura</th>
                     <?
                     if ($_POST["tipopedido"] == "finalizados") {
                     ?>
@@ -49,6 +50,7 @@ if ($pedidos["respuesta"] == "OK") {
                         <td>$<?= number_format($pedido["abonado"], 2); ?></td>
                         <td>$<?= number_format($pedido["total"] - $pedido["abonado"], 2); ?></td>
                         <td><?= fecha_formateada($pedido["fecha"]); ?></td>
+                        <td><?= (!empty($pedido["idfactura"]) ? $pedido["factura_serie"] . "-" . $pedido["factura_folio"] : "-"); ?></td>
                         <?
                         if ($_POST["tipopedido"] == "finalizados") {
                         ?>
@@ -125,6 +127,11 @@ if ($pedidos["respuesta"] == "OK") {
                                 if ($pedido["idcotizacion"] > 0) {
                                 ?>
                                     <li><a href="/modulos/cotizaciones/cotizacion.php?idcotizacion=<?= $pedido["idcotizacion"] ?>" class="dropdown-item" target="_blank">Cotización</a></li>
+                                <?
+                                }
+                                if (!empty($pedido["idfactura"])) {
+                                ?>
+                                    <li><a href="javascript:;" onclick="solicitudServidor('facturas','verPDF','idfactura=<?= $pedido['idfactura'] ?>','');" class="dropdown-item">Factura</a></li>
                                 <?
                                 }
                                 ?>
