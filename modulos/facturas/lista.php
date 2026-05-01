@@ -23,6 +23,7 @@ if ($facturas["respuesta"] == "OK") {
                     <th>Cliente</th>
                     <th>Total</th>
                     <th>Fecha</th>
+                    <th>Pedido</th>
                     <th style="width: 160px;"></th>
                 </tr>
             </thead>
@@ -35,16 +36,28 @@ if ($facturas["respuesta"] == "OK") {
                         <td><?= $factura["cliente"]; ?></td>
                         <td>$<?= number_format($factura["total"],2); ?></td>
                         <td><?= str_replace("<br>"," ",fecha_formateada($factura["registro"])); ?></td>
+                        <td><?= $factura["idpedido"] ? $factura["idpedido"] : "—"; ?></td>
                         <td class="text-end">
-                            <a href="javascript:;" onclick="solicitudServidor('facturas','verPDF','idfactura=<?= $factura['idfactura'] ?>','');" class="btn btn-info btn-sm mb-1" title="Ver PDF"><i class="uil uil-file-alt"></i></a>
-                            <?
-                            if ($factura["status"] == 1) {
-                            ?>
-                                <a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/cancelar.php?idfactura=<?= $factura["idfactura"] ?>" class="btn btn-danger btn-sm mb-1" title="Cancelar"><i class="uil uil-times"></i></a>
-                            <?
-                            }
-                            ?>
-
+                            <button class="btn btn-secondary btn-sm mb-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                Opciones <span class="caret"></span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a href="javascript:;" onclick="solicitudServidor('facturas','verPDF','idfactura=<?= $factura['idfactura'] ?>','');" class="dropdown-item">Ver Factura</a></li>
+                                <li><a href="/modulos/facturas/descargar.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Descargar Archivos</a></li>
+                                <?
+                                if ($factura["idpedido"]) {
+                                ?>
+                                    <li><a href="/modulos/pedidos/pedido.php?idpedido=<?= $factura["idpedido"] ?>" class="dropdown-item" target="_blank">PDF Pedido</a></li>
+                                    <li><a href="/modulos/pedidos/produccion.php?idpedido=<?= $factura["idpedido"] ?>" class="dropdown-item" target="_blank">PDF Producción</a></li>
+                                <?
+                                }
+                                if ($factura["status"] == 1) {
+                                ?>
+                                    <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/cancelar.php?idfactura=<?= $factura["idfactura"] ?>" class="dropdown-item">Cancelar Factura</a></li>
+                                <?
+                                }
+                                ?>
+                            </ul>
                         </td>
                     </tr>
                 <?
