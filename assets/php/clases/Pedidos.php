@@ -3638,6 +3638,7 @@ class Pedidos
             $idmetodopago = mysqli_real_escape_string($this->con,$post["slcMetodoPago"]);
             $idformapago = ($idmetodopago==1) ? 21 : mysqli_real_escape_string($this->con,$post["slcFormaPago"]);
             $correo = mysqli_real_escape_string($this->con,$post["txtCorreo"]);
+            $correoAdicional = isset($post["txtCorreoAdicional"]) ? trim($post["txtCorreoAdicional"]) : "";
 
             if($idrazonsocial=="" || $idrazonsocial==0){
                 $query = "
@@ -3940,6 +3941,10 @@ class Pedidos
                 $this->claseCorreos = new Correos();
 
                 $correos = array_filter(array_map('trim', explode(',', $correo)));
+                if (!empty($correoAdicional)) {
+                    $correosExtra = array_filter(array_map('trim', explode(',', $correoAdicional)));
+                    $correos = array_merge(array_values($correos), array_values($correosExtra));
+                }
 
                 $respuesta = $this->claseCorreos->enviarCorreo(array(
                     "idtienda" => $pedido["idtienda"],

@@ -553,5 +553,126 @@ class Facturas{
         return false;
     }
 
+    public function reenviarFactura($post){
+        try{
+            $idfactura = mysqli_real_escape_string($this->con, $post["idfactura"]);
+            $correo    = $post["txtCorreo"];
+            $correoAdicional = isset($post["txtCorreoAdicional"]) ? trim($post["txtCorreoAdicional"]) : "";
+
+            $query = "
+            select
+                a.idfactura,
+                a.idcliente,
+                a.uuid,
+                a.serie,
+                a.folio,
+                a.total,
+                a.timbrado,
+                b.rfc as rfc_emisor,
+                d.idtienda
+            from
+                tfacturas a
+            left join
+                temisores b
+            on
+                b.idemisor = a.idemisor
+            left join
+                tpedidos c
+            on
+                c.idfactura = a.idfactura
+            left join
+                tsucursales d
+            on
+                d.idsucursal = c.idsucursal
+            where
+                a.idfactura = '".$idfactura."'";
+
+            $factura = mysqli_fetch_assoc(mysqli_query($this->con, $query));
+
+            if (!$factura || empty($factura["idfactura"])) {
+                throw new Exception("No se encontró la factura");
+            }
+
+            $uuid      = $factura["uuid"];
+            $rfc_emisor = $factura["rfc_emisor"];
+            $idcliente = $factura["idcliente"];
+            $idtienda  = $factura["idtienda"];
+
+            $base = $_SERVER["DOCUMENT_ROOT"]."/emisores/".$rfc_emisor."/facturas/".$uuid;
+
+            if (!file_exists($base.".pdf")) {
+                throw new Exception("No se encontró el PDF de la factura");
+            }
+            if (!file_exists($base.".xml")) {
+                throw new Exception("No se encontró el XML de la factura");
+            }
+
+            $pdf_b64 = base64_encode(file_get_contents($base.".pdf"));
+            $xml_b64 = base64_encode(file_get_contents($base.".xml"));
+
+            // Actualizar correo del cliente (igual que al facturar)
+            if ($idcliente > 0) {
+                $correosArr = array_values(array_filter(array_map('trim', explode(',', $correo))));
+                $correoMain = mysqli_real_escape_string($this->con, $correosArr[0] ?? '');
+                $correosAdicionales = mysqli_real_escape_string($this->con, implode(',', array_slice($correosArr, 1)));
+                $query = "update tclientes set correo = '".$correoMain."', correos_adicionales = '".$correosAdicionales."' where idcliente = '".$idcliente."'";
+                mysqli_query($this->con, $query);
+            }
+
+            // Logo (igual que al facturar, con fallback al logo por defecto)
+            $rutaLogo = $_SERVER["DOCUMENT_ROOT"]."/imagenes/tiendas/".$idtienda."_logo.png";
+            $logo = "data:image/png;base64,".((file_exists($rutaLogo))
+                ? base64_encode(file_get_contents($rutaLogo))
+                : base64_encode(file_get_contents($_SERVER["DOCUMENT_ROOT"]."/assets/images/logo-uniformes-trazo.png")));
+
+            // Variables para la plantilla de correo
+            $folio = $factura["serie"]."-".$factura["folio"];
+            $fecha = $factura["timbrado"];
+            $total = $factura["total"];
+
+            include($_SERVER["DOCUMENT_ROOT"]."/assets/plantillas/correo/envioFactura.php");
+            include($_SERVER["DOCUMENT_ROOT"]."/assets/plantillas/correo/base.php");
+
+            include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Correos.php");
+            $claseCorreos = new Correos();
+
+            $correos = array_values(array_filter(array_map('trim', explode(',', $correo))));
+            if (!empty($correoAdicional)) {
+                $correosExtra = array_values(array_filter(array_map('trim', explode(',', $correoAdicional))));
+                $correos = array_merge($correos, $correosExtra);
+            }
+
+            $resultado = $claseCorreos->enviarCorreo(array(
+                "idtienda" => $idtienda,
+                "asunto"   => "Envío de factura",
+                "mensaje"  => $cuerpo,
+                "correos"  => $correos,
+                "adjuntos" => array(
+                    array("nombre" => $uuid.".xml", "archivo" => $xml_b64),
+                    array("nombre" => $uuid.".pdf", "archivo" => $pdf_b64)
+                )
+            ));
+
+            if ($resultado["result"] == "success") {
+                $respuesta = array(
+                    "respuesta" => "OK",
+                    "tipo"      => "mensajecargar",
+                    "titulo"    => "Factura reenviada",
+                    "mensaje"   => "La factura se ha enviado correctamente.",
+                    "formulario" => "formBusqueda"
+                );
+            } else {
+                throw new Exception($resultado["mensaje"]);
+            }
+        }catch(Exception $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje"   => $e->getMessage()
+            );
+        }finally{
+            return $respuesta;
+        }
+    }
+
 }
 ?>
