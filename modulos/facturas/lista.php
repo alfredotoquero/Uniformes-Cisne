@@ -48,12 +48,13 @@ if ($facturas["respuesta"] == "OK") {
                                 <?
                                 if ($factura["idpedido"]) {
                                 ?>
-                                    <li><a href="/modulos/pedidos/pedido.php?idpedido=<?= $factura["idpedido"] ?>" class="dropdown-item" target="_blank">PDF Pedido</a></li>
-                                    <li><a href="/modulos/pedidos/produccion.php?idpedido=<?= $factura["idpedido"] ?>" class="dropdown-item" target="_blank">PDF Producción</a></li>
+                                    <li><a href="/modulos/pedidos/pedido.php?idpedido=<?= $factura['idpedido'] ?>" class="dropdown-item" target="_blank">PDF Pedido</a></li>
+                                    <li><a href="/modulos/pedidos/produccion.php?idpedido=<?= $factura['idpedido'] ?>" class="dropdown-item" target="_blank">PDF Producción</a></li>
                                 <?
                                 }
                                 if ($factura["status"] == 1) {
                                 ?>
+                                    <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/refacturar.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Refacturar</a></li>
                                     <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/cancelar.php?idfactura=<?= $factura["idfactura"] ?>" class="dropdown-item">Cancelar Factura</a></li>
                                 <?
                                 }

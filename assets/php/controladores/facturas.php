@@ -25,6 +25,13 @@ try{
                 $respuesta = $arrayerror;
             }
         break;
+        case "refacturar":
+            if($_POST["authToken"]==$_SESSION["authToken"]){
+                $respuesta = $claseFacturas->refacturarFactura($_POST);
+            }else{
+                $respuesta = $arrayerror;
+            }
+        break;
         default: $respuesta = $arrayerror; break;
     }
     
