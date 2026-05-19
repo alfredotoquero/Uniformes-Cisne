@@ -120,6 +120,11 @@ if(!empty($pedido["idtienda"])){
                 <small class="text-muted d-block mt-1">Para enviar a múltiples destinatarios, separa los correos con coma (ej: correo1@ejemplo.com, correo2@ejemplo.com)</small>
             </div>
             <div class="mb-3">
+                <label for="txtCorreoAdicional" class="form-label">Correos adicionales <small class="text-muted">(opcional)</small></label>
+                <input type="text" class="form-control" name="txtCorreoAdicional" id="txtCorreoAdicional" placeholder="Ingresa correos adicionales" autocomplete="off" pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}(\s*,\s*[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})*" title="Ingresa uno o más correos electrónicos válidos separados por coma">
+                <small class="text-muted d-block mt-1">Correos extra a los que se enviará la factura, separados por coma. No se guardarán en el sistema.</small>
+            </div>
+            <div class="mb-3">
                 <label for="slcMetodoPago" class="form-label">Método de pago<span>*</span></label>
                 <select class="form-control requerido" name="slcMetodoPago" id="slcMetodoPago" onchange="validarMetodoPago();" data-mensajeerror="Debes indicar el método de pago">
                     <option value="0">--Seleccionar--</option>
@@ -205,6 +210,16 @@ if(!empty($pedido["idtienda"])){
             if(!regexCorreo.test(correos[i].trim())){
                 swalFocus("Error", "El correo electrónico '"+correos[i].trim()+"' no es válido", "error", "txtCorreo");
                 return;
+            }
+        }
+        var correosAdicionales = $("#txtCorreoAdicional").val().trim();
+        if(correosAdicionales !== ""){
+            var adicionales = correosAdicionales.split(",");
+            for(var i = 0; i < adicionales.length; i++){
+                if(!regexCorreo.test(adicionales[i].trim())){
+                    swalFocus("Error", "El correo adicional '"+adicionales[i].trim()+"' no es válido", "error", "txtCorreoAdicional");
+                    return;
+                }
             }
         }
         validarFormulario('formFacturar');

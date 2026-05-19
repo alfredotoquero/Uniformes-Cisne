@@ -18,6 +18,13 @@ try{
         case "cancelar":
             $respuesta = $claseFacturas->cancelarFactura($_POST);
         break;
+        case "reenviar":
+            if($_POST["authToken"]==$_SESSION["authToken"]){
+                $respuesta = $claseFacturas->reenviarFactura($_POST);
+            }else{
+                $respuesta = $arrayerror;
+            }
+        break;
         default: $respuesta = $arrayerror; break;
     }
     

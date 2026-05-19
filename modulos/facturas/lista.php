@@ -43,6 +43,7 @@ if ($facturas["respuesta"] == "OK") {
                             </button>
                             <ul class="dropdown-menu">
                                 <li><a href="javascript:;" onclick="solicitudServidor('facturas','verPDF','idfactura=<?= $factura['idfactura'] ?>','');" class="dropdown-item">Ver Factura</a></li>
+                                <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/reenviar.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Reenviar Factura</a></li>
                                 <li><a href="/modulos/facturas/descargar.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Descargar Archivos</a></li>
                                 <?
                                 if ($factura["idpedido"]) {
