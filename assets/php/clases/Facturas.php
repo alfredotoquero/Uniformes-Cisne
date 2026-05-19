@@ -281,8 +281,12 @@ class Facturas{
                 a.idusuario,
                 b.nombre as usuario,
                 a.idcliente,
+                a.idrazonsocial,
                 c.razon_social as cliente,
                 c.rfc as cliente_rfc,
+                c.idusocfdi,
+                c.idregimenfiscal,
+                c.codigo_postal,
                 a.idemisor,
                 d.razon_social as emisor,
                 d.rfc as emisor_rfc,
@@ -298,7 +302,8 @@ class Facturas{
                 a.uuid,
                 a.status,
                 a.timbrado,
-                a.registro
+                a.registro,
+                g.idpedido
             from
                 tfacturas a
             left join
@@ -308,7 +313,7 @@ class Facturas{
             left join
                 tclienterazonessociales c
             on
-                c.idcliente = a.idcliente
+                c.idrazonsocial = a.idrazonsocial
             left join
                 temisores d
             on
@@ -321,6 +326,10 @@ class Facturas{
                 sat_tcatformaspago f
             on
                 f.idformapago = a.idformapago
+            left join
+                tpedidos g
+            on
+                g.idfactura = a.idfactura
             where
                 a.idfactura = '".$idfactura."'";
             $result = mysqli_query($this->con,$query);
@@ -551,6 +560,69 @@ class Facturas{
             return true;
         }
         return false;
+    }
+
+    public function refacturarFactura($post){
+        try{
+            $idfacturaVieja = (int)$post["idfactura"];
+            $idpedido       = (int)$post["idpedido"];
+
+            // Paso 1: generar la nueva factura reutilizando el proceso existente
+            include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Pedidos.php");
+            $clasePedidos   = new Pedidos();
+            $resultFacturar = $clasePedidos->facturarPedido($post);
+
+            if($resultFacturar["respuesta"] != "OK"){
+                throw new Exception($resultFacturar["mensaje"]);
+            }
+
+            // Paso 2: recuperar el UUID de la nueva factura enlazada al pedido
+            $query = "
+            select f.uuid
+            from tfacturas f
+            inner join tpedidos p on p.idfactura = f.idfactura
+            where p.idpedido = '".$idpedido."'";
+            $nuevaFactura = mysqli_fetch_assoc(mysqli_query($this->con, $query));
+
+            if(!$nuevaFactura || empty($nuevaFactura["uuid"])){
+                throw new Exception("No se pudo recuperar la nueva factura generada.");
+            }
+
+            // Paso 3: obtener el idmotivo correspondiente a clave '01'
+            $query = "select idmotivo from sat_tcatmotivoscancelacion where clave = '01'";
+            $motivo = mysqli_fetch_assoc(mysqli_query($this->con, $query));
+
+            if(!$motivo){
+                throw new Exception("No se encontró el motivo de cancelación requerido.");
+            }
+
+            // Paso 4: cancelar la factura anterior con motivo 01 y el UUID de la nueva
+            $resultCancelar = $this->cancelarFactura(array(
+                "idfactura"            => $idfacturaVieja,
+                "slcMotivoCancelacion" => $motivo["idmotivo"],
+                "txtUUID"              => $nuevaFactura["uuid"]
+            ));
+
+            if($resultCancelar["respuesta"] != "OK"){
+                throw new Exception("La nueva factura fue generada pero no se pudo cancelar la anterior: ".$resultCancelar["mensaje"]);
+            }
+
+            $respuesta = array(
+                "respuesta" => "OK",
+                "tipo"      => "mensajecargar",
+                "titulo"    => "Refacturación exitosa",
+                "mensaje"   => "Se ha generado la nueva factura y la anterior ha sido cancelada correctamente.",
+                "formulario" => "formBusqueda"
+            );
+
+        }catch(Exception $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje"   => $e->getMessage()
+            );
+        }finally{
+            return $respuesta;
+        }
     }
 
     public function reenviarFactura($post){
