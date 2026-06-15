@@ -3868,7 +3868,7 @@ class Pedidos
                     tfacturas
                 (
                     idusuario,
-                    idcliente,
+                    ".(($idcliente > 0) ? "idcliente," : "")."
                     idrazonsocial,
                     idemisor,
                     idmetodopago,
@@ -3883,7 +3883,7 @@ class Pedidos
                     timbrado
                 ) values (
                     '".$idusuario."',
-                    '".$idcliente."',
+                    ".(($idcliente>0) ? "'".$idcliente."'," : "")."
                     '".$idrazonsocial."',
                     '".$idemisor."',
                     '".$idmetodopago."',
