@@ -3660,7 +3660,7 @@ class Pedidos
                 $regimenfiscal = mysqli_fetch_assoc(mysqli_query($this->con,$query))["regimenfiscal"];
             }
 
-            if($idrazonsocial==""){
+            if($idrazonsocial=="" && $idcliente > 0){
                 $query = "
                 insert
                 into
