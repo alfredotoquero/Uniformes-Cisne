@@ -3869,7 +3869,7 @@ class Pedidos
                 (
                     idusuario,
                     ".(($idcliente > 0) ? "idcliente," : "")."
-                    idrazonsocial,
+                    ".(($idrazonsocial > 0) ? "idrazonsocial," : "")."
                     idemisor,
                     idmetodopago,
                     idformapago,
@@ -3884,7 +3884,7 @@ class Pedidos
                 ) values (
                     '".$idusuario."',
                     ".(($idcliente>0) ? "'".$idcliente."'," : "")."
-                    '".$idrazonsocial."',
+                    "(($idrazonsocial > 0) ? "'".$idrazonsocial."'," : "")."
                     '".$idemisor."',
                     '".$idmetodopago."',
                     '".$idformapago."',
