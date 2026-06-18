@@ -3762,7 +3762,26 @@ class Pedidos
             from
                 vrpedidoproductos
             where
-                idpedido = '".$idpedido."'";
+                idpedido = '".$idpedido."'
+            union
+            select
+                cantidad,
+                producto,
+                precio,
+                cve_unidad_medida,
+                cve_producto_servicio
+            from
+                vrcotizacionproductos
+            where
+                idpedido = '".$idpedido."' and
+                idcotizacionproducto not in (
+                    select
+                        idcotizacionproducto
+                    from
+                        vrpedidoproductos
+                    where
+                        idpedido = '".$idpedido."'	
+                )";
             $result = mysqli_query($this->con,$query);
 
             $subtotal = 0;
