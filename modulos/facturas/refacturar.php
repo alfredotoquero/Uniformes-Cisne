@@ -54,13 +54,13 @@ $_SESSION["authToken"] = sha1(uniqid(microtime(), true));
     </div>
     <hr>
     <form id="formRefacturar" name="formRefacturar">
-        <input type="hidden" name="controlador" value="facturas">
-        <input type="hidden" name="accion"      value="refacturar">
-        <input type="hidden" name="idusuario"   value="<?= $_SESSION["usuario"]["idusuario"] ?>">
-        <input type="hidden" name="idpedido"    value="<?= (int)$factura["idpedido"] ?>">
-        <input type="hidden" name="idcliente"   value="<?= $idcliente ?>">
-        <input type="hidden" name="idfactura"   value="<?= (int)$_GET["idfactura"] ?>">
-        <input type="hidden" name="authToken"   value="<?= $_SESSION["authToken"] ?>">
+        <input type="hidden" name="controlador" id="controlador" value="facturas">
+        <input type="hidden" name="accion" id="accion" value="refacturar">
+        <input type="hidden" name="idusuario" id="idusuario" value="<?= $_SESSION["usuario"]["idusuario"] ?>">
+        <input type="hidden" name="idpedido" id="idpedido" value="<?= (int)$factura["idpedido"] ?>">
+        <input type="hidden" name="idcliente" id="idcliente" value="<?= $idcliente ?>">
+        <input type="hidden" name="idfactura" id="idfactura" value="<?= (int)$_GET["idfactura"] ?>">
+        <input type="hidden" name="authToken" id="authToken" value="<?= $_SESSION["authToken"] ?>">
         <div class="mb-3">
             <label class="form-label">Cliente</label><br>
             <?= $nombreCliente ?>
