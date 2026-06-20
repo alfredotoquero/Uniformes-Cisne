@@ -82,7 +82,21 @@ class Pedidos
             select
                 vpedidos.*,
                 tfacturas.serie as factura_serie,
-                tfacturas.folio as factura_folio
+                tfacturas.folio as factura_folio,
+                (
+                    (SELECT COALESCE(SUM(cantidad), 0) FROM trcotizacionproductos WHERE idpedido = vpedidos.idpedido) >
+                    (SELECT COALESCE(SUM(fc.cantidad_facturada), 0)
+                     FROM tpedidosfacturas pf
+                     JOIN tpedidosfacturasconceptos fc ON fc.idpedidofactura = pf.idpedidofactura
+                     JOIN tfacturas tf ON tf.idfactura = pf.idfactura AND tf.status = 1
+                     WHERE pf.idpedido = vpedidos.idpedido)
+                ) as pendiente_facturacion,
+                (
+                    SELECT GROUP_CONCAT(CONCAT(f.idfactura, '|', f.serie, '-', f.folio) ORDER BY f.idfactura SEPARATOR ',')
+                    FROM tpedidosfacturas pf2
+                    JOIN tfacturas f ON f.idfactura = pf2.idfactura
+                    WHERE pf2.idpedido = vpedidos.idpedido
+                ) as facturas_parciales
             from
                 vpedidos
             left join
@@ -3627,6 +3641,53 @@ class Pedidos
         }
     }
 
+    public function obtenerConceptosPendientesFacturacion($idpedido){
+        try{
+            $idpedido = mysqli_real_escape_string($this->con, $idpedido);
+
+            $query = "
+            SELECT
+                cp.idcotizacionproducto,
+                cp.producto,
+                cp.cantidad as cantidad_total,
+                cp.precio,
+                cp.cve_unidad_medida,
+                cp.cve_producto_servicio,
+                COALESCE(fi.cantidad_facturada, 0) as cantidad_facturada,
+                cp.cantidad - COALESCE(fi.cantidad_facturada, 0) as cantidad_pendiente
+            FROM
+                vrcotizacionproductos cp
+            LEFT JOIN (
+                SELECT pf.idpedido, fc.idcotizacionproducto, SUM(fc.cantidad_facturada) AS cantidad_facturada
+                FROM tpedidosfacturas pf
+                JOIN tpedidosfacturasconceptos fc ON fc.idpedidofactura = pf.idpedidofactura
+                JOIN tfacturas tf ON tf.idfactura = pf.idfactura AND tf.status = 1
+                GROUP BY pf.idpedido, fc.idcotizacionproducto
+            ) fi ON fi.idpedido = cp.idpedido AND fi.idcotizacionproducto = cp.idcotizacionproducto
+            WHERE
+                cp.idpedido = '".$idpedido."'
+            HAVING
+                cantidad_pendiente > 0
+            ORDER BY
+                cp.idcotizacionproducto";
+
+            $result = mysqli_query($this->con, $query);
+            $conceptos = mysqli_fetch_all($result, MYSQLI_ASSOC);
+
+            $respuesta = array(
+                "respuesta" => "OK",
+                "conceptos" => $conceptos
+            );
+        }catch(Exception $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje" => $e->getMessage()
+            );
+        }finally{
+            return $respuesta;
+        }
+    }
+
     public function facturarPedido($post){
         try{
             $idpedido = mysqli_real_escape_string($this->con,$post["idpedido"]);
@@ -3756,40 +3817,69 @@ class Pedidos
 
             $pedido = $this->obtenerPedido(array("idpedido" => $idpedido))["pedido"];
 
-            // Conceptos
-            $query = "
-            select
-                cantidad,
-                producto,
-                precio,
-                cve_unidad_medida,
-                cve_producto_servicio
-            from
-                vrcotizacionproductos
-            where
-                idpedido = '".$idpedido."'";
+            // Conceptos — soporte para facturación parcial
+            $conceptos_post = (!empty($post["conceptos"]) && is_array($post["conceptos"])) ? $post["conceptos"] : array();
+
+            if(!empty($conceptos_post)){
+                $ids_in = implode(',', array_map('intval', array_keys($conceptos_post)));
+                $query = "
+                select
+                    idcotizacionproducto,
+                    cantidad,
+                    producto,
+                    precio,
+                    cve_unidad_medida,
+                    cve_producto_servicio
+                from
+                    vrcotizacionproductos
+                where
+                    idpedido = '".$idpedido."'
+                    and idcotizacionproducto in (".$ids_in.")";
+            }else{
+                $query = "
+                select
+                    idcotizacionproducto,
+                    cantidad,
+                    producto,
+                    precio,
+                    cve_unidad_medida,
+                    cve_producto_servicio
+                from
+                    vrcotizacionproductos
+                where
+                    idpedido = '".$idpedido."'";
+            }
             $result = mysqli_query($this->con,$query);
 
             $subtotal = 0;
             $conceptos_factura = array();
+            $conceptos_facturados = array();
             while($tmp = mysqli_fetch_assoc($result)){
-                $cadena_utf8 = mb_convert_encoding($tmp["producto"], 'UTF-8', 'auto');
+                $idcotizacionproducto = (int)$tmp["idcotizacionproducto"];
 
+                $cantidad = (!empty($conceptos_post) && isset($conceptos_post[$idcotizacionproducto]))
+                    ? (float)$conceptos_post[$idcotizacionproducto]
+                    : (float)$tmp["cantidad"];
+
+                if($cantidad <= 0) continue;
+
+                $cadena_utf8 = mb_convert_encoding($tmp["producto"], 'UTF-8', 'auto');
                 $cadena_sin_acentos = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $cadena_utf8);
-                
+
                 $valor_unitario = ($pedido["incluyeiva"]==1) ? ($tmp["precio"]/(1+($pedido["tasaiva"]/100))) : $tmp["precio"];
 
                 $conceptos_factura[] = [
-                    "Cantidad" => $tmp["cantidad"],
+                    "Cantidad" => $cantidad,
                     "Descripcion" => $cadena_sin_acentos,
                     "ValorUnitario" => sprintf("%.6f", $valor_unitario),
-                    "Importe" =>  sprintf("%.6f", $valor_unitario*$tmp["cantidad"]),
+                    "Importe" =>  sprintf("%.6f", $valor_unitario*$cantidad),
                     "ClaveUnidad" => $tmp["cve_unidad_medida"],
                     "ClaveProdServ" => $tmp["cve_producto_servicio"],
                     "ObjetoImp" => '02'
                 ];
 
-                $subtotal += $valor_unitario*$tmp["cantidad"];
+                $subtotal += $valor_unitario*$cantidad;
+                $conceptos_facturados[$idcotizacionproducto] = $cantidad;
             }
 
             //Metodo y forma de pago
@@ -3926,6 +4016,17 @@ class Pedidos
                 where
                     idpedido = '".$idpedido."'";
                 mysqli_query($this->con,$query);
+
+                // Registrar factura parcial
+                $query = "insert into tpedidosfacturas (idpedido, idfactura) values ('".$idpedido."', '".$idfactura."')";
+                mysqli_query($this->con, $query);
+                $idpedidofactura = mysqli_insert_id($this->con);
+                foreach($conceptos_facturados as $idcotizacionproducto => $cantidad_facturada){
+                    $idcotizacionproducto = (int)$idcotizacionproducto;
+                    $cantidad_facturada = mysqli_real_escape_string($this->con, $cantidad_facturada);
+                    $query = "insert into tpedidosfacturasconceptos (idpedidofactura, idcotizacionproducto, cantidad_facturada) values ('".$idpedidofactura."', '".$idcotizacionproducto."', '".$cantidad_facturada."')";
+                    mysqli_query($this->con, $query);
+                }
 
                 if ($idcliente > 0) {
                     $correosArr = array_values(array_filter(array_map('trim', explode(',', $correo))));

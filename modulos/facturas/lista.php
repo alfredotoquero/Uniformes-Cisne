@@ -23,6 +23,7 @@ if ($facturas["respuesta"] == "OK") {
                     <th>Cliente</th>
                     <th>Total</th>
                     <th>Fecha</th>
+                    <th>Estado</th>
                     <th>Pedido</th>
                     <th style="width: 160px;"></th>
                 </tr>
@@ -36,6 +37,15 @@ if ($facturas["respuesta"] == "OK") {
                         <td><?= $factura["cliente"]; ?></td>
                         <td>$<?= number_format($factura["total"],2); ?></td>
                         <td><?= str_replace("<br>"," ",fecha_formateada($factura["registro"])); ?></td>
+                        <td>
+                            <?php
+                            switch((int)$factura["status"]){
+                                case 1:  echo '<span class="badge bg-success">ACTIVA</span>'; break;
+                                case 2:  echo '<span class="badge bg-warning text-dark">PROCESO DE CANCELACIÓN</span>'; break;
+                                default: echo '<span class="badge bg-danger">CANCELADA</span>'; break;
+                            }
+                            ?>
+                        </td>
                         <td><?= $factura["idpedido"] ? $factura["idpedido"] : "—"; ?></td>
                         <td class="text-end">
                             <button class="btn btn-secondary btn-sm mb-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">
