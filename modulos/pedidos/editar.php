@@ -7,12 +7,14 @@ include($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Productos.php");
 include($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Sucursales.php");
 include($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Cotizaciones.php");
 include($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Pedidos.php");
+include($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/TiposProducto.php");
 
 $claseCategorias = new Categorias();
 $claseProductos = new Productos();
 $claseSucursales = new Sucursales();
 $claseCotizaciones = new Cotizaciones();
 $clasePedidos = new Pedidos();
+$claseTiposProducto = new TiposProducto();
 
 $idusuario = $_SESSION["usuario"]["idusuario"];
 
@@ -124,6 +126,22 @@ $_SESSION["authToken"]=sha1(uniqid(microtime(), true));
                                             ?>
                                             <option value="<?= $categoria["idcategoriaproducto"]; ?>"><?= $categoria["nombre"]; ?></option>
                                             <?
+                                        }
+                                        ?>
+                                    </select>
+                                </div>
+                                <div class="col-12 col-md-2" style="display:none;" id="selectTipoProducto">
+                                    <label for="" class="mb-2">Tipo de Producto</label>
+                                    <select name="slcTipoProducto" id="slcTipoProducto" class="form-control select2">
+                                        <option value="0">--Selecciona un Tipo--</option>
+                                        <?
+                                        $tiposproducto = $claseTiposProducto->obtenerTiposProducto($_POST);
+                                        if($tiposproducto["respuesta"] == "OK"){
+                                            while($tipoproducto = mysqli_fetch_assoc($tiposproducto["tiposproducto"])){
+                                                ?>
+                                                <option value="<?= $tipoproducto["idtipoproducto"]; ?>"><?= $tipoproducto["nombre"]; ?></option>
+                                                <?
+                                            }
                                         }
                                         ?>
                                     </select>
