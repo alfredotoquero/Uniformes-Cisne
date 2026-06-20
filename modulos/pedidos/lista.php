@@ -50,7 +50,14 @@ if ($pedidos["respuesta"] == "OK") {
                         <td>$<?= number_format($pedido["abonado"], 2); ?></td>
                         <td>$<?= number_format($pedido["total"] - $pedido["abonado"], 2); ?></td>
                         <td><?= fecha_formateada($pedido["fecha"]); ?></td>
-                        <td><?= (!empty($pedido["idfactura"]) ? $pedido["factura_serie"] . "-" . $pedido["factura_folio"] : "-"); ?></td>
+                        <td><?php
+                        if (!empty($pedido["facturas_parciales"])) {
+                            $labels = array_map(function($fi){ return explode('|', $fi)[1]; }, explode(',', $pedido["facturas_parciales"]));
+                            echo implode(', ', $labels);
+                        } else {
+                            echo '-';
+                        }
+                        ?></td>
                         <?
                         if ($_POST["tipopedido"] == "finalizados") {
                         ?>
@@ -75,7 +82,7 @@ if ($pedidos["respuesta"] == "OK") {
                         <td class="text-end">
                             <a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/pedidos/informacion.php?idpedido=<?= $pedido["idpedido"] ?>" class="btn btn-info btn-sm mb-1" title="Informacion"><i class="uil uil-info-circle"></i></a>
                             <?
-                            if(empty($pedido["idfactura"]) && $facturarPedidos){
+                            if($pedido["pendiente_facturacion"] && $facturarPedidos){
                             ?>
                             <a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/pedidos/facturar.php?idpedido=<?= $pedido["idpedido"] ?>" class="btn btn-info btn-sm mb-1" title="Facturar"><i class="uil uil-file-alt"></i></a>
                             <?
@@ -129,10 +136,13 @@ if ($pedidos["respuesta"] == "OK") {
                                     <li><a href="/modulos/cotizaciones/cotizacion.php?idcotizacion=<?= $pedido["idcotizacion"] ?>" class="dropdown-item" target="_blank">Cotización</a></li>
                                 <?
                                 }
-                                if (!empty($pedido["idfactura"])) {
+                                if (!empty($pedido["facturas_parciales"])) {
+                                    foreach (explode(',', $pedido["facturas_parciales"]) as $fi) {
+                                        [$fi_id, $fi_label] = explode('|', $fi);
                                 ?>
-                                    <li><a href="javascript:;" onclick="solicitudServidor('facturas','verPDF','idfactura=<?= $pedido['idfactura'] ?>','');" class="dropdown-item">Factura</a></li>
+                                    <li><a href="javascript:;" onclick="solicitudServidor('facturas','verPDF','idfactura=<?= $fi_id ?>','');" class="dropdown-item">Factura <?= $fi_label ?></a></li>
                                 <?
+                                    }
                                 }
                                 ?>
                             </ul>

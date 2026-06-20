@@ -68,7 +68,7 @@ class Facturas{
             on
                 f.idformapago = a.idformapago
             left join
-                tpedidos g
+                tpedidosfacturas g
             on
                 g.idfactura = a.idfactura";
 
@@ -327,7 +327,7 @@ class Facturas{
             on
                 f.idformapago = a.idformapago
             left join
-                tpedidos g
+                tpedidosfacturas g
             on
                 g.idfactura = a.idfactura
             where
@@ -441,7 +441,7 @@ class Facturas{
                         update
                             tfacturas
                         set
-                            status = 0
+                            status = 3
                         where
                             idfactura = '".$idfactura."'";
                         
@@ -649,9 +649,13 @@ class Facturas{
             on
                 b.idemisor = a.idemisor
             left join
+                tpedidosfacturas pf
+            on
+                pf.idfactura = a.idfactura
+            left join
                 tpedidos c
             on
-                c.idfactura = a.idfactura
+                c.idpedido = pf.idpedido
             left join
                 tsucursales d
             on
