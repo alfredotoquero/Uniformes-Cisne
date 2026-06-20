@@ -3908,7 +3908,7 @@ class Pedidos
             $datos = array(
                 "api_key" => "tek_npzimyh2ajjxpj3p3j2ofozt7c6deej9uu",
                 "Version" => "4.0",
-                "pruebas" => 1,
+                "pruebas" => 0,
                 "numero_certificado" => $numero_certificado,
                 "certificado" => $certificado,
                 "keypem" => $archivo_keypem,
