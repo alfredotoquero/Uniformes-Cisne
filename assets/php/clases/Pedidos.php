@@ -1114,6 +1114,7 @@ class Pedidos
                             idproducto,
                             producto,
                             idcategoriaproducto,
+                            idtipoproducto,
                             cantidad,
                             precio,
                             serigrafia1,
@@ -1141,6 +1142,7 @@ class Pedidos
                             '" . $partida["idproducto"] . "',
                             '" . $partida["producto"] . "',
                             '" . $partida["idcategoriaproducto"] . "',
+                            '" . ($partida["idtipoproducto"] ?? "0") . "',
                             '" . $partida["cantidad"] . "',
                             '" . $partida["precio"] . "',
                             '" . $partida["serigrafia1"] . "',
@@ -1229,6 +1231,7 @@ class Pedidos
                             idproducto,
                             producto,
                             idcategoriaproducto,
+                            idtipoproducto,
                             idtalla,
                             talla,
                             idcolor,
@@ -1243,6 +1246,7 @@ class Pedidos
                             '" . $desglose["idproducto"] . "',
                             '" . $desglose["producto"] . "',
                             '" . $desglose["idcategoriaproducto"] . "',
+                            '" . ($desglose["idtipoproducto"] ?? "0") . "',
                             '" . $desglose["idtalla"] . "',
                             '" . $desglose["talla"] . "',
                             '" . $desglose["idcolor"] . "',
@@ -3125,6 +3129,7 @@ class Pedidos
                 $post["idproducto"] = $partida["idproducto"];
                 $post["producto"] = $partida["producto"];
                 $post["idcategoriaproducto"] = $partida["idcategoriaproducto"];
+                $post["idtipoproducto"] = $partida["idtipoproducto"];
                 $post["cantidad"] = $partida["cantidad"];
                 $post["precio"] = $partida["precio"];
 
