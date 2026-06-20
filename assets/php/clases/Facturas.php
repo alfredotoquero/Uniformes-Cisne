@@ -24,7 +24,7 @@ class Facturas{
             select
                 a.idfactura,
                 a.idcliente,
-                b.nombre as cliente,
+                case when a.idcliente > 0 then b.nombre else a.razonsocial end as cliente,
                 a.idrazonsocial,
                 c.razon_social,
                 a.idemisor,
