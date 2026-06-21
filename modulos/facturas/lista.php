@@ -25,6 +25,7 @@ if ($facturas["respuesta"] == "OK") {
                     <th>Fecha</th>
                     <th>Estado</th>
                     <th>Pedido</th>
+                    <th>Ticket</th>
                     <th style="width: 160px;"></th>
                 </tr>
             </thead>
@@ -47,6 +48,7 @@ if ($facturas["respuesta"] == "OK") {
                             ?>
                         </td>
                         <td><?= $factura["idpedido"] ? $factura["idpedido"] : "—"; ?></td>
+                        <td><?= $factura["folio_ticket"] ? $factura["folio_ticket"] : "—"; ?></td>
                         <td class="text-end">
                             <button class="btn btn-secondary btn-sm mb-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 Opciones <span class="caret"></span>
