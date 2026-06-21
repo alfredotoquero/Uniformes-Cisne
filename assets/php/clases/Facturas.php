@@ -45,7 +45,7 @@ class Facturas{
                 a.timbrado,
                 a.registro,
                 g.idpedido,
-                h.idticket
+                h.folio as folio_ticket
             from
                 tfacturas a
             left join
