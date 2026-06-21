@@ -44,7 +44,8 @@ class Facturas{
                 a.status,
                 a.timbrado,
                 a.registro,
-                g.idpedido
+                g.idpedido,
+                h.idticket
             from
                 tfacturas a
             left join
@@ -70,7 +71,11 @@ class Facturas{
             left join
                 tpedidosfacturas g
             on
-                g.idfactura = a.idfactura";
+                g.idfactura = a.idfactura
+            left join
+                ttickets h
+            on
+                h.idfactura = a.idfactura";
 
             $condiciones = array();
 
