@@ -3775,7 +3775,7 @@ class Pedidos
 
             $receptor = array(
                 "Rfc" => $tmp["rfc"],
-                "Nombre" => utf8_encode($tmp["razon_social"]),
+                "Nombre" => utf8_decode(trim($tmp["razon_social"])),
                 "UsoCFDI" => $tmp["usocfdi"],
                 "DomicilioFiscalReceptor" => $tmp["codigo_postal"],
                 "RegimenFiscalReceptor" => $tmp["regimenfiscal"]
@@ -3804,7 +3804,7 @@ class Pedidos
 
             $emisor = array(
                 "Rfc" => $tmp["rfc"],
-                "Nombre" => $tmp["razon_social"],
+                "Nombre" => utf8_decode(trim($tmp["razon_social"])),
                 "RegimenFiscal" => $tmp["regimenfiscal"],
                 "LugarExpedicion" => $tmp["codigo_postal"]
             );
