@@ -24,7 +24,7 @@ class Pagos{
             select
                 a.idpago,
                 a.idcliente,
-                b.nombre as cliente,
+                coalesce(b.nombre, a.cliente) as cliente,
                 a.idrazonsocial,
                 c.razon_social,
                 a.idemisor,
