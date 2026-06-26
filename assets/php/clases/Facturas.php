@@ -446,11 +446,28 @@ class Facturas{
                         update
                             tfacturas
                         set
-                            status = 3
+                            status = '".(($response["statusCFDI"]=="201") ? "2" : "3")."'
                         where
                             idfactura = '".$idfactura."'";
                         
                         if(mysqli_query($this->con,$query)){
+                            $query = "
+                            update
+                                tpedidos
+                            set
+                                idfactura = NULL
+                            where
+                                idfactura = '".$idfactura."'";
+                            mysqli_query($this->con,$query);
+
+                            $query = "
+                            delete
+                            from
+                                tpedidosfacturas
+                            where
+                                idfactura = '".$idfactura."'";
+                            mysqli_query($this->con,$query);
+                            
                             $respuesta = array(
                                 "respuesta" => "OK",
                                 "tipo" => "mensajecargar",
