@@ -420,6 +420,8 @@ class Facturas{
                         "uuid_sustitucion" => $uuid
                     );
 
+                    file_put_contents($_SERVER["DOCUMENT_ROOT"]."/txts/pruebaCancelacion.txt",print_r($datos,true));
+
                     $curl = curl_init();
 
                     curl_setopt_array($curl, array(
