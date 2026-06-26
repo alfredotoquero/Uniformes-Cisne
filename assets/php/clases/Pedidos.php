@@ -3705,6 +3705,7 @@ class Pedidos
             $idformapago = ($idmetodopago==1) ? 21 : mysqli_real_escape_string($this->con,$post["slcFormaPago"]);
             $correo = mysqli_real_escape_string($this->con,$post["txtCorreo"]);
             $correoAdicional = isset($post["txtCorreoAdicional"]) ? trim($post["txtCorreoAdicional"]) : "";
+            $idfactura = !empty($post["idfactura"]) ? mysqli_real_escape_string($this->con,$post["idfactura"]) : NULL;
 
             if($idrazonsocial=="" || $idrazonsocial==0){
                 $query = "
@@ -3929,6 +3930,21 @@ class Pedidos
                 "carta_porte" => false,
                 "comentarios" => $comentarios
             );
+
+            if(!empty($idfactura)){
+                $query = "
+                select
+                    uuid
+                from
+                    tfacturas
+                where
+                    idfactura = '".$idfactura."'";
+                $uuid = mysqli_fetch_assoc(mysqli_query($this->con,$query))["uuid"];
+
+                if(!empty($uuid)){
+                    $datos["relaciones"] = array("TipoRelacion" => "04", "relacionados" => $uuid);
+                }
+            }
 
             $url = "https://api.xptk.app/timbrador/index.php";
 
