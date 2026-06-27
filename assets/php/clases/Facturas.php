@@ -579,11 +579,9 @@ class Facturas{
     }
 
     private function generarPfx($keypem, $cerpem, $pfx, $pwd){
-        exec("openssl pkcs12 -export -inkey $keypem -in $cerpem -passout pass:'$pwd' > $pfx");
-        if (file_exists($pfx)) {
-            return true;
-        }
-        return false;
+        // -legacy fuerza algoritmos RC2/3DES compatibles con librerías antiguas como Chilkat 9.5.x
+        exec("openssl pkcs12 -export -legacy -inkey $keypem -in $cerpem -passout pass:'$pwd' -out $pfx");
+        return file_exists($pfx) && filesize($pfx) > 0;
     }
 
     public function refacturarFactura($post){
