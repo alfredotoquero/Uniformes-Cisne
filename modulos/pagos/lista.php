@@ -47,7 +47,7 @@ if ($pagos["respuesta"] == "OK") {
                                     <li><a href="/modulos/pagos/descargarXML.php?idpago=<?= $pago['idpago'] ?>" class="dropdown-item">Descargar XML</a></li>
                                     <li><a href="/modulos/pagos/descargar.php?idpago=<?= $pago['idpago'] ?>" class="dropdown-item">Descargar Pago</a></li>
                                 <?
-                                }else if ($pago["tiene_factura"]) {
+                                }else if ($pago["tiene_factura"] && $pago["status"] == 1) {
                                 ?>
                                     <li><a href="javascript:;" onclick="solicitudServidor('pagos','timbrar','idpago=<?= $pago['idpago'] ?>','¿Deseas timbrar el complemento de pago?');" class="dropdown-item">Timbrar</a></li>
                                     <li><hr class="dropdown-divider"></li>

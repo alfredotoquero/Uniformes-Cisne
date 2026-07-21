@@ -439,30 +439,41 @@ class Pagos{
                     curl_close($curl);
 
                     if($response["status"]=="success"){
+                        // statusCFDI 201 = "cancelado con aceptación pendiente": el receptor tiene
+                        // 3 días para aceptar/rechazar ante el SAT, así que todavía NO se revierte el
+                        // efecto del pago. Eso se hará hasta que un proceso posterior confirme la
+                        // cancelación definitiva (pendiente: cronjob que reconsulte el estatus).
+                        $esDefinitiva = ($response["statusCFDI"] != "201");
+
                         mysqli_begin_transaction($this->con);
 
                         $query = "
                         update
                             tpagos
                         set
-                            status = '".(($response["statusCFDI"]=="201") ? "2" : "3")."'
+                            status = '".($esDefinitiva ? "3" : "2")."'
                         where
                             idpago = '".$idpago."'";
                         $ok = mysqli_query($this->con,$query);
-                        $ok = $ok && $this->revertirEfectoPago($idpago);
+
+                        if($esDefinitiva){
+                            $ok = $ok && $this->revertirEfectoPago($idpago);
+                        }
 
                         if($ok){
                             mysqli_commit($this->con);
                             $respuesta = array(
                                 "respuesta" => "OK",
                                 "tipo" => "mensajecargar",
-                                "titulo" => "Pago cancelado",
-                                "mensaje" => "El pago se ha cancelado correctamente.",
+                                "titulo" => $esDefinitiva ? "Pago cancelado" : "Cancelación en proceso",
+                                "mensaje" => $esDefinitiva
+                                    ? "El pago se ha cancelado correctamente."
+                                    : "La cancelación se envió al SAT y quedó pendiente de aceptación por el receptor. El efecto del pago se revertirá hasta que se confirme la cancelación definitiva.",
                                 "formulario" => "formBusqueda"
                             );
                         }else{
                             mysqli_rollback($this->con);
-                            throw new Exception("El CFDI se canceló ante el SAT, pero no se pudo revertir el efecto del pago en el pedido/factura. Contacta a soporte para corregir el registro manualmente.");
+                            throw new Exception("El CFDI se canceló ante el SAT, pero no se pudo actualizar el registro del pago. Contacta a soporte para corregir el registro manualmente.");
                         }
                     }else{
                         throw new Exception($response["text"]);
