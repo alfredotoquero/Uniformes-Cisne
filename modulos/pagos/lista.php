@@ -35,30 +35,37 @@ if ($pagos["respuesta"] == "OK") {
                         <td><?= $pago["cliente"]; ?></td>
                         <td>$<?= number_format($pago["total"],2); ?></td>
                         <td><?= str_replace("<br>"," ",fecha_formateada($pago["registro"])); ?></td>
-                        <!--
-
-                    opciones de pedido:
-                    informacion
-                    editar
-                    activar
-                    entregar
-                    pedido
-                    produccion
-                    cotizacion
-                    finalizar
-                    cancelar
-
-                    -->
                         <td class="text-end">
-                            <a href="javascript:;" onclick="solicitudServidor('pagos','verPDF','idpago=<?= $pago['idpago'] ?>','');" class="btn btn-info btn-sm mb-1" title="Ver PDF"><i class="uil uil-file-alt"></i></a>
-                            <?
-                            if ($pago["status"] == 1) {
-                            ?>
-                                <a href="javascript:;" onclick="solicitudServidor('pagos','cancelar','idpago=<?= $pago['idpago'] ?>','¿Deseas cancelar el pago?','');" class="btn btn-danger btn-sm mb-1" title="Cancelar"><i class="uil uil-times"></i></a>
-                            <?
-                            }
-                            ?>
-
+                            <button class="btn btn-secondary btn-sm mb-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                Opciones <span class="caret"></span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a href="javascript:;" onclick="solicitudServidor('pagos','verPDF','idpago=<?= $pago['idpago'] ?>','');" class="dropdown-item">Ver PDF</a></li>
+                                <?
+                                if (!empty($pago["uuid"])) {
+                                ?>
+                                    <li><a href="/modulos/pagos/descargarXML.php?idpago=<?= $pago['idpago'] ?>" class="dropdown-item">Descargar XML</a></li>
+                                    <li><a href="/modulos/pagos/descargar.php?idpago=<?= $pago['idpago'] ?>" class="dropdown-item">Descargar Pago</a></li>
+                                <?
+                                }else if ($pago["tiene_factura"]) {
+                                ?>
+                                    <li><a href="javascript:;" onclick="solicitudServidor('pagos','timbrar','idpago=<?= $pago['idpago'] ?>','¿Deseas timbrar el complemento de pago?');" class="dropdown-item">Timbrar</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                <?
+                                }
+                                if ($pago["status"] == 1) {
+                                    if (!empty($pago["uuid"])) {
+                                    ?>
+                                        <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/pagos/cancelar.php?idpago=<?= $pago['idpago'] ?>" class="dropdown-item text-danger">Cancelar</a></li>
+                                    <?
+                                    }else{
+                                    ?>
+                                        <li><a href="javascript:;" onclick="solicitudServidor('pagos','cancelar','idpago=<?= $pago['idpago'] ?>','¿Deseas cancelar este pago?');" class="dropdown-item text-danger">Cancelar</a></li>
+                                    <?
+                                    }
+                                }
+                                ?>
+                            </ul>
                         </td>
                     </tr>
                 <?
