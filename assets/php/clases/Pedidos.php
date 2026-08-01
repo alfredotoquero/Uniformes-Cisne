@@ -4099,12 +4099,12 @@ class Pedidos
         }catch(Exception $e){
             $respuesta = array(
                 "respuesta" => "ERROR",
-                "mensaje" => "Código 111 ".$e->getMessage()." (".basename($e->getFile()).":".$e->getLine().")"
+                "mensaje" => "Código 111 ".$e->getMessage()
             );
         }catch(Throwable $e){
             $respuesta = array(
                 "respuesta" => "ERROR",
-                "mensaje" => "Código 111 ".$e->getMessage()." (".basename($e->getFile()).":".$e->getLine().")"
+                "mensaje" => "Código 111 ".$e->getMessage()
             );
         }finally{
             return $respuesta;
