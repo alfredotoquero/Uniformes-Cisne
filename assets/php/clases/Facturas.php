@@ -420,8 +420,6 @@ class Facturas{
                         "uuid_sustitucion" => $uuid
                     );
 
-                    file_put_contents($_SERVER["DOCUMENT_ROOT"]."/txts/pruebaCancelacion.txt",print_r($datos,true));
-
                     $curl = curl_init();
 
                     curl_setopt_array($curl, array(
@@ -439,9 +437,19 @@ class Facturas{
                         )
                     ));
 
-                    $response = curl_exec($curl);
-                    $response = json_decode($response,true);
+                    $responseRaw = curl_exec($curl);
+                    $curlError = curl_error($curl);
+                    $response = json_decode($responseRaw,true);
                     curl_close($curl);
+
+                    file_put_contents(
+                        $_SERVER["DOCUMENT_ROOT"]."/txts/pruebaCancelacion.txt",
+                        print_r($datos,true)."\n\nRESPUESTA CRUDA:\n".$responseRaw."\n\nCURL ERROR:\n".$curlError
+                    );
+
+                    if(is_null($response)){
+                        throw new Exception("La API de timbrado no devolvió una respuesta válida".(!empty($curlError) ? " (".$curlError.")" : ""));
+                    }
 
                     if($response["status"]=="success"){
                         $query = "
