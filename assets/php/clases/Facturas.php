@@ -382,7 +382,7 @@ class Facturas{
                 $motivo_cancelacion = mysqli_fetch_assoc(mysqli_query($this->con,$query));
 
                 // En caso de que requiera UUID y el formato no sea válido entonces mostramos un error
-                if($motivo_cancelacion["requiere_uuid"]==1 && !esUUIDValido($uuid)){
+                if($motivo_cancelacion["requiere_uuid"]==1 && !$this->esUUIDValido($uuid)){
                     throw new Exception("El formato del UUID de sustitución no es válido");
                 }
 
