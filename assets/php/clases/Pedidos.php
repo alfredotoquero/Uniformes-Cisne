@@ -3942,7 +3942,7 @@ class Pedidos
                 $uuid = mysqli_fetch_assoc(mysqli_query($this->con,$query))["uuid"];
 
                 if(!empty($uuid)){
-                    $datos["relaciones"] = array("TipoRelacion" => "04", "relacionados" => $uuid);
+                    $datos["relaciones"] = array("TipoRelacion" => "04", "relacionados" => array($uuid));
                 }
             }
 
