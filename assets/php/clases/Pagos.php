@@ -394,7 +394,7 @@ class Pagos{
                     "uuid" => $pago["uuid"],
                     "rfc_emisor" => $pago["emisor_rfc"],
                     "rfc_receptor" => $pago["cliente_rfc"],
-                    "total" => $pago["total"],
+                    "total" => 0,
                     "cve_motivo_cancelacion" => $motivo_cancelacion["clave"],
                     "uuid_sustitucion" => $uuid
                 );
