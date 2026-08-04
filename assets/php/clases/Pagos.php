@@ -332,7 +332,10 @@ class Pagos{
         }
     }
 
-    public function cancelarPago($post){
+    // Cancela el CFDI del complemento de pago ante el SAT. Solo aplica a pagos timbrados
+    // (status = 1 con uuid). No cierra el pago como tal: deja status = 4 (complemento
+    // cancelado, pago pendiente de cancelar) para que después se llame a cancelarPago().
+    public function cancelarComplemento($post){
         try{
             $idpago = mysqli_real_escape_string($this->con,$post["idpago"]);
 
@@ -347,140 +350,170 @@ class Pagos{
             $pago = $pago["pago"];
 
             if(empty($pago["uuid"])){
-                // El pago nunca se timbró: no existe CFDI que cancelar ante el SAT,
-                // solo se revierte su efecto sobre el pedido/factura y se marca cancelado
-                mysqli_begin_transaction($this->con);
+                throw new Exception("Este pago no tiene un complemento timbrado que cancelar.");
+            }
 
-                $query = "
-                update
-                    tpagos
-                set
-                    status = 3
-                where
-                    idpago = '".$idpago."'";
-                $ok = mysqli_query($this->con,$query);
-                $ok = $ok && $this->revertirEfectoPago($idpago);
+            if($pago["status"] != 1){
+                throw new Exception("El complemento de este pago no se encuentra activo.");
+            }
 
-                if($ok){
-                    mysqli_commit($this->con);
-                    $respuesta = array(
-                        "respuesta" => "OK",
-                        "tipo" => "mensajecargar",
-                        "titulo" => "Pago cancelado",
-                        "mensaje" => "El pago se ha cancelado correctamente.",
-                        "formulario" => "formBusqueda"
-                    );
-                }else{
-                    mysqli_rollback($this->con);
-                    throw new Exception("No se pudo cancelar el pago.");
-                }
-            }else{
-                $idmotivocancelacion = mysqli_real_escape_string($this->con,$post["slcMotivoCancelacion"]);
-                $uuid = mysqli_real_escape_string($this->con,$post["txtUUID"]);
+            $idmotivocancelacion = mysqli_real_escape_string($this->con,$post["slcMotivoCancelacion"]);
+            $uuid = mysqli_real_escape_string($this->con,$post["txtUUID"]);
 
-                $query = "
-                select
-                    *
-                from
-                    sat_tcatmotivoscancelacion
-                where
-                    idmotivo = '".$idmotivocancelacion."'";
-                $motivo_cancelacion = mysqli_fetch_assoc(mysqli_query($this->con,$query));
+            $query = "
+            select
+                *
+            from
+                sat_tcatmotivoscancelacion
+            where
+                idmotivo = '".$idmotivocancelacion."'";
+            $motivo_cancelacion = mysqli_fetch_assoc(mysqli_query($this->con,$query));
 
-                if($motivo_cancelacion["requiere_uuid"]==1 && !$this->esUUIDValido($uuid)){
-                    throw new Exception("El formato del UUID de sustitución no es válido");
-                }
+            if($motivo_cancelacion["requiere_uuid"]==1 && !$this->esUUIDValido($uuid)){
+                throw new Exception("El formato del UUID de sustitución no es válido");
+            }
 
-                $cerpath = $_SERVER["DOCUMENT_ROOT"]."/emisores/".$pago["emisor_rfc"]."/sat/certificado.cer";
-                $cerpem = $cerpath.".pem";
-                exec("openssl x509 -in $cerpath -inform DER -out $cerpem");
+            $cerpath = $_SERVER["DOCUMENT_ROOT"]."/emisores/".$pago["emisor_rfc"]."/sat/certificado.cer";
+            $cerpem = $cerpath.".pem";
+            exec("openssl x509 -in $cerpath -inform DER -out $cerpem");
 
-                $keypath = $_SERVER["DOCUMENT_ROOT"]."/emisores/".$pago["emisor_rfc"]."/sat/llave.key";
-                $keypem = $keypath.".pem";
+            $keypath = $_SERVER["DOCUMENT_ROOT"]."/emisores/".$pago["emisor_rfc"]."/sat/llave.key";
+            $keypem = $keypath.".pem";
 
-                $pfx = $_SERVER["DOCUMENT_ROOT"]."/emisores/".$pago["emisor_rfc"]."/sat/pfx.pfx";
-                $pwdPfx = uniqid();
+            $pfx = $_SERVER["DOCUMENT_ROOT"]."/emisores/".$pago["emisor_rfc"]."/sat/pfx.pfx";
+            $pwdPfx = uniqid();
 
-                if($this->generarPfx($keypem,$cerpem,$pfx,$pwdPfx)){
-                    // Se manda a cancelar el complemento de pago al SAT
-                    $datos = array(
-                        "api_key" => "tek_npzimyh2ajjxpj3p3j2ofozt7c6deej9uu",
-                        "pruebas" => 0,
-                        "tipoComprobante" => "C2",
-                        "pfx" => base64_encode(file_get_contents($pfx)),
-                        "pfx_pwd" => $pwdPfx,
-                        "uuid" => $pago["uuid"],
-                        "rfc_emisor" => $pago["emisor_rfc"],
-                        "rfc_receptor" => $pago["cliente_rfc"],
-                        "total" => $pago["total"],
-                        "cve_motivo_cancelacion" => $motivo_cancelacion["clave"],
-                        "uuid_sustitucion" => $uuid
-                    );
+            if($this->generarPfx($keypem,$cerpem,$pfx,$pwdPfx)){
+                // Se manda a cancelar el complemento de pago al SAT
+                $datos = array(
+                    "api_key" => "tek_npzimyh2ajjxpj3p3j2ofozt7c6deej9uu",
+                    "pruebas" => 0,
+                    "tipoComprobante" => "C2",
+                    "pfx" => base64_encode(file_get_contents($pfx)),
+                    "pfx_pwd" => $pwdPfx,
+                    "uuid" => $pago["uuid"],
+                    "rfc_emisor" => $pago["emisor_rfc"],
+                    "rfc_receptor" => $pago["cliente_rfc"],
+                    "total" => $pago["total"],
+                    "cve_motivo_cancelacion" => $motivo_cancelacion["clave"],
+                    "uuid_sustitucion" => $uuid
+                );
 
-                    $curl = curl_init();
+                $curl = curl_init();
 
-                    curl_setopt_array($curl, array(
-                        CURLOPT_URL => 'https://api.xptk.app/timbrador/index.php',
-                        CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_ENCODING => '',
-                        CURLOPT_MAXREDIRS => 10,
-                        CURLOPT_TIMEOUT => 0,
-                        CURLOPT_FOLLOWLOCATION => true,
-                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                        CURLOPT_CUSTOMREQUEST => 'POST',
-                        CURLOPT_POSTFIELDS => http_build_query($datos),
-                        CURLOPT_HTTPHEADER => array(
-                            'Content-Type: application/x-www-form-urlencoded'
-                        )
-                    ));
+                curl_setopt_array($curl, array(
+                    CURLOPT_URL => 'https://api.xptk.app/timbrador/index.php',
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_ENCODING => '',
+                    CURLOPT_MAXREDIRS => 10,
+                    CURLOPT_TIMEOUT => 0,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                    CURLOPT_CUSTOMREQUEST => 'POST',
+                    CURLOPT_POSTFIELDS => http_build_query($datos),
+                    CURLOPT_HTTPHEADER => array(
+                        'Content-Type: application/x-www-form-urlencoded'
+                    )
+                ));
 
-                    $response = curl_exec($curl);
-                    $response = json_decode($response,true);
-                    curl_close($curl);
+                $response = curl_exec($curl);
+                $response = json_decode($response,true);
+                curl_close($curl);
 
-                    if($response["status"]=="success"){
-                        // statusCFDI 201 = "cancelado con aceptación pendiente": el receptor tiene
-                        // 3 días para aceptar/rechazar ante el SAT, así que todavía NO se revierte el
-                        // efecto del pago. Eso se hará hasta que un proceso posterior confirme la
-                        // cancelación definitiva (pendiente: cronjob que reconsulte el estatus).
-                        $esDefinitiva = ($response["statusCFDI"] != "201");
+                if($response["status"]=="success"){
+                    // statusCFDI 201 = "cancelado con aceptación pendiente": el receptor tiene
+                    // 3 días para aceptar/rechazar ante el SAT, así que el pago se queda en
+                    // status = 2 y no se habilita todavía "Cancelar pago" (pendiente: cronjob
+                    // que reconsulte el estatus y lo mueva a definitivo).
+                    $esDefinitiva = ($response["statusCFDI"] != "201");
 
-                        mysqli_begin_transaction($this->con);
+                    $query = "
+                    update
+                        tpagos
+                    set
+                        status = '".($esDefinitiva ? "4" : "2")."'
+                    where
+                        idpago = '".$idpago."'";
+                    $ok = mysqli_query($this->con,$query);
 
-                        $query = "
-                        update
-                            tpagos
-                        set
-                            status = '".($esDefinitiva ? "3" : "2")."'
-                        where
-                            idpago = '".$idpago."'";
-                        $ok = mysqli_query($this->con,$query);
-
-                        if($esDefinitiva){
-                            $ok = $ok && $this->revertirEfectoPago($idpago);
-                        }
-
-                        if($ok){
-                            mysqli_commit($this->con);
-                            $respuesta = array(
-                                "respuesta" => "OK",
-                                "tipo" => "mensajecargar",
-                                "titulo" => $esDefinitiva ? "Pago cancelado" : "Cancelación en proceso",
-                                "mensaje" => $esDefinitiva
-                                    ? "El pago se ha cancelado correctamente."
-                                    : "La cancelación se envió al SAT y quedó pendiente de aceptación por el receptor. El efecto del pago se revertirá hasta que se confirme la cancelación definitiva.",
-                                "formulario" => "formBusqueda"
-                            );
-                        }else{
-                            mysqli_rollback($this->con);
-                            throw new Exception("El CFDI se canceló ante el SAT, pero no se pudo actualizar el registro del pago. Contacta a soporte para corregir el registro manualmente.");
-                        }
+                    if($ok){
+                        $respuesta = array(
+                            "respuesta" => "OK",
+                            "tipo" => "mensajecargar",
+                            "titulo" => $esDefinitiva ? "Complemento cancelado" : "Cancelación en proceso",
+                            "mensaje" => $esDefinitiva
+                                ? "El complemento de pago se ha cancelado correctamente. Ahora puedes cancelar el pago."
+                                : "La cancelación se envió al SAT y quedó pendiente de aceptación por el receptor. Podrás cancelar el pago hasta que se confirme la cancelación definitiva.",
+                            "formulario" => "formBusqueda"
+                        );
                     }else{
-                        throw new Exception($response["text"]);
+                        throw new Exception("El CFDI se canceló ante el SAT, pero no se pudo actualizar el registro del pago. Contacta a soporte para corregir el registro manualmente.");
                     }
                 }else{
-                    throw new Exception("Ocurrió un error en la generación de los archivos para cancelación");
+                    throw new Exception($response["text"]);
                 }
+            }else{
+                throw new Exception("Ocurrió un error en la generación de los archivos para cancelación");
+            }
+        }catch(Exception $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje" => $e->getMessage()
+            );
+        }finally{
+            return $respuesta;
+        }
+    }
+
+    // Cierra el pago como tal: revierte su efecto sobre el pedido/factura y lo marca
+    // cancelado. Aplica a pagos que nunca se timbraron (status = 1 sin uuid) y a pagos
+    // cuyo complemento ya se canceló ante el SAT (status = 4).
+    public function cancelarPago($post){
+        try{
+            $idpago = mysqli_real_escape_string($this->con,$post["idpago"]);
+
+            $pago = $this->getPago(array(
+                "idpago" => $idpago
+            ));
+
+            if($pago["respuesta"]!="OK"){
+                throw new Exception($pago["mensaje"]);
+            }
+
+            $pago = $pago["pago"];
+
+            if($pago["status"] == 2){
+                throw new Exception("La cancelación del complemento sigue pendiente de aceptación ante el SAT. Espera a que se resuelva antes de cancelar el pago.");
+            }
+
+            if(!(($pago["status"] == 1 && empty($pago["uuid"])) || $pago["status"] == 4)){
+                throw new Exception("Este pago no se puede cancelar en su estado actual.");
+            }
+
+            mysqli_begin_transaction($this->con);
+
+            $query = "
+            update
+                tpagos
+            set
+                status = 3
+            where
+                idpago = '".$idpago."'";
+            $ok = mysqli_query($this->con,$query);
+            $ok = $ok && $this->revertirEfectoPago($idpago);
+
+            if($ok){
+                mysqli_commit($this->con);
+                $respuesta = array(
+                    "respuesta" => "OK",
+                    "tipo" => "mensajecargar",
+                    "titulo" => "Pago cancelado",
+                    "mensaje" => "El pago se ha cancelado correctamente.",
+                    "formulario" => "formBusqueda"
+                );
+            }else{
+                mysqli_rollback($this->con);
+                throw new Exception("No se pudo cancelar el pago.");
             }
         }catch(Exception $e){
             $respuesta = array(

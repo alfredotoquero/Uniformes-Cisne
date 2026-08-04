@@ -70,6 +70,7 @@ $clientes = $claseClientes->obtenerClientes(array(
                                         <option value="0">Todos los status</option>
                                         <option value="1">Activas</option>
                                         <option value="2">Pendientes de cancelación</option>
+                                        <option value="4">Complemento cancelado</option>
                                         <option value="3">Canceladas</option>
                                     </select>
                                 </div>

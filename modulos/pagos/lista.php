@@ -23,6 +23,7 @@ if ($pagos["respuesta"] == "OK") {
                     <th>Cliente</th>
                     <th>Total</th>
                     <th>Fecha</th>
+                    <th>Estado</th>
                     <th style="width: 160px;"></th>
                 </tr>
             </thead>
@@ -35,6 +36,16 @@ if ($pagos["respuesta"] == "OK") {
                         <td><?= $pago["cliente"]; ?></td>
                         <td>$<?= number_format($pago["total"],2); ?></td>
                         <td><?= str_replace("<br>"," ",fecha_formateada($pago["registro"])); ?></td>
+                        <td>
+                            <?php
+                            switch ((int)$pago["status"]) {
+                                case 1:  echo '<span class="badge bg-success">ACTIVO</span>'; break;
+                                case 2:  echo '<span class="badge bg-warning text-dark">PENDIENTE ACEPTACIÓN SAT</span>'; break;
+                                case 4:  echo '<span class="badge bg-info text-dark">COMPLEMENTO CANCELADO</span>'; break;
+                                default: echo '<span class="badge bg-danger">CANCELADO</span>'; break;
+                            }
+                            ?>
+                        </td>
                         <td class="text-end">
                             <button class="btn btn-secondary btn-sm mb-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 Opciones <span class="caret"></span>
@@ -53,16 +64,14 @@ if ($pagos["respuesta"] == "OK") {
                                     <li><hr class="dropdown-divider"></li>
                                 <?
                                 }
-                                if ($pago["status"] == 1) {
-                                    if (!empty($pago["uuid"])) {
-                                    ?>
-                                        <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/pagos/cancelar.php?idpago=<?= $pago['idpago'] ?>" class="dropdown-item text-danger">Cancelar</a></li>
-                                    <?
-                                    }else{
-                                    ?>
-                                        <li><a href="javascript:;" onclick="solicitudServidor('pagos','cancelar','idpago=<?= $pago['idpago'] ?>','¿Deseas cancelar este pago?');" class="dropdown-item text-danger">Cancelar</a></li>
-                                    <?
-                                    }
+                                if ($pago["status"] == 1 && !empty($pago["uuid"])) {
+                                ?>
+                                    <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/pagos/cancelar.php?idpago=<?= $pago['idpago'] ?>" class="dropdown-item text-danger">Cancelar complemento</a></li>
+                                <?
+                                }else if (($pago["status"] == 1 && empty($pago["uuid"])) || $pago["status"] == 4) {
+                                ?>
+                                    <li><a href="javascript:;" onclick="solicitudServidor('pagos','cancelar','idpago=<?= $pago['idpago'] ?>','¿Deseas cancelar este pago?');" class="dropdown-item text-danger">Cancelar pago</a></li>
+                                <?
                                 }
                                 ?>
                             </ul>

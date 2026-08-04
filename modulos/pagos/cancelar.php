@@ -21,13 +21,13 @@ $motivoscancelacion = $sat->obtenerMotivosCancelacion()["motivoscancelacion"];
     ?>
     <div class="row">
         <div class="col-12">
-            <h4 class="header-title">Cancelar pago <?= $pago["serie"]."-".$pago["folio"] ?></h4>
+            <h4 class="header-title">Cancelar complemento de pago <?= $pago["serie"]."-".$pago["folio"] ?></h4>
         </div>
     </div>
     <hr>
     <form id="formCancelar" name="formCancelar">
         <input type="hidden" name="controlador" id="controlador" value="pagos">
-        <input type="hidden" name="accion" id="accion" value="cancelar">
+        <input type="hidden" name="accion" id="accion" value="cancelarComplemento">
         <input type="hidden" name="idusuario" id="idusuario" value="<?= $_SESSION["usuario"]["idusuario"] ?>">
         <input type="hidden" name="idpago" id="idpago" value="<?= $_GET["idpago"] ?>">
         <div class="mb-3">
@@ -57,7 +57,7 @@ $motivoscancelacion = $sat->obtenerMotivosCancelacion()["motivoscancelacion"];
                 <input type="text" class="form-control uppercase" name="txtUUID" id="txtUUID" placeholder="Ingresa el UUID de sustitución" autocomplete="off" data-mensajeerror="Debes indicar el UUID de sustitución" maxlength="36">
             </div>
         </div>
-        <button type="button" onclick="validarFormulario('formCancelar');" class="btn btn-primary">Cancelar</button>
+        <button type="button" onclick="validarFormulario('formCancelar');" class="btn btn-primary">Cancelar complemento</button>
     </form>
     <?php
     }else{
