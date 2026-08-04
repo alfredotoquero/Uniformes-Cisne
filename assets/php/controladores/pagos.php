@@ -15,6 +15,9 @@ try{
         case "verPDF":
             $respuesta = $clasePagos->getPDF($_POST["idpago"]);
         break;
+        case "cancelarComplemento":
+            $respuesta = $clasePagos->cancelarComplemento($_POST);
+        break;
         case "cancelar":
             $respuesta = $clasePagos->cancelarPago($_POST);
         break;
