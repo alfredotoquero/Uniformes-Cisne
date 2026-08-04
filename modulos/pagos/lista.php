@@ -40,7 +40,7 @@ if ($pagos["respuesta"] == "OK") {
                             <?php
                             switch ((int)$pago["status"]) {
                                 case 1:  echo '<span class="badge bg-success">ACTIVO</span>'; break;
-                                case 2:  echo '<span class="badge bg-warning text-dark">PENDIENTE ACEPTACIÓN SAT</span>'; break;
+                                case 2:  echo '<span class="badge bg-warning text-dark">PROCESO DE CANCELACIÓN</span>'; break;
                                 case 4:  echo '<span class="badge bg-info text-dark">COMPLEMENTO CANCELADO</span>'; break;
                                 default: echo '<span class="badge bg-danger">CANCELADO</span>'; break;
                             }
