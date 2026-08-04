@@ -417,8 +417,22 @@ class Pagos{
                 ));
 
                 $response = curl_exec($curl);
-                $response = json_decode($response,true);
+                $curlError = curl_error($curl);
                 curl_close($curl);
+
+                $datosLog = $datos;
+                $datosLog["pfx"] = "(omitido, ".strlen($datos["pfx"])." bytes base64)";
+                file_put_contents(
+                    $_SERVER["DOCUMENT_ROOT"]."/txts/debugCancelarComplemento.txt",
+                    date("Y-m-d H:i:s")." - idpago ".$idpago."\n"
+                    ."REQUEST:\n".print_r($datosLog,true)
+                    ."\nCURL ERROR:\n".$curlError
+                    ."\nRESPONSE (raw):\n".$response."\n"
+                    .str_repeat("-",80)."\n",
+                    FILE_APPEND
+                );
+
+                $response = json_decode($response,true);
 
                 if($response["status"]=="success"){
                     // statusCFDI 201 = "cancelado con aceptación pendiente": el receptor tiene
