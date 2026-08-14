@@ -54,10 +54,12 @@ if ($pagos["respuesta"] == "OK") {
                                 Opciones <span class="caret"></span>
                             </button>
                             <ul class="dropdown-menu">
-                                <li><a href="javascript:;" onclick="solicitudServidor('pagos','verPDF','idpago=<?= $pago['idpago'] ?>','');" class="dropdown-item">Ver PDF</a></li>
                                 <?
+                                // Los archivos del complemento solo existen si el pago está
+                                // timbrado; sin UUID no hay PDF ni XML que mostrar
                                 if (!empty($pago["uuid"])) {
                                 ?>
+                                    <li><a href="javascript:;" onclick="solicitudServidor('pagos','verPDF','idpago=<?= $pago['idpago'] ?>','');" class="dropdown-item">Ver PDF</a></li>
                                     <li><a href="/modulos/pagos/descargarXML.php?idpago=<?= $pago['idpago'] ?>" class="dropdown-item">Descargar XML</a></li>
                                     <li><a href="/modulos/pagos/descargar.php?idpago=<?= $pago['idpago'] ?>" class="dropdown-item">Descargar Pago</a></li>
                                 <?
@@ -74,6 +76,14 @@ if ($pagos["respuesta"] == "OK") {
                                 }else if (($pago["status"] == 1 && empty($pago["uuid"])) || $pago["status"] == 4) {
                                 ?>
                                     <li><a href="javascript:;" onclick="solicitudServidor('pagos','cancelar','idpago=<?= $pago['idpago'] ?>','¿Deseas cancelar este pago?');" class="dropdown-item text-danger">Cancelar pago</a></li>
+                                <?
+                                }
+
+                                // Un pago cancelado que nunca se timbró no tiene ninguna acción
+                                // posible: sin esto el menú se abriría vacío
+                                if (empty($pago["uuid"]) && $pago["status"] != 1 && $pago["status"] != 4) {
+                                ?>
+                                    <li><span class="dropdown-item text-muted">Sin acciones disponibles</span></li>
                                 <?
                                 }
                                 ?>
