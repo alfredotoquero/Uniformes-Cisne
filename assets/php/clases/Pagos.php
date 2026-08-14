@@ -8,6 +8,41 @@ class Pagos{
         $this->con = $con;
     }
 
+    /**
+     * Devuelve el SQL de la relación pedido -> factura, resolviéndola por las tres vías que
+     * existen en la base: tpedidosfacturas (facturación parcial, la relación vigente),
+     * tpedidos.idfactura (legado, solo conserva la última factura del pedido) y
+     * ttickets.idfactura (facturación de tickets desde cortes). Se usa como tabla derivada.
+     *
+     * @return string SQL de la tabla derivada con las columnas idpedido e idfactura
+     */
+    private function relacionPedidoFactura(){
+        return "
+                (
+                select
+                    idpedido,
+                    idfactura
+                from
+                    tpedidosfacturas
+                union
+                select
+                    idpedido,
+                    idfactura
+                from
+                    tpedidos
+                where
+                    idfactura > 0
+                union
+                select
+                    idpedido,
+                    idfactura
+                from
+                    ttickets
+                where
+                    idfactura > 0
+                )";
+    }
+
     public function getPagos($post){
         try{
             $fecha_inicial = mysqli_real_escape_string($this->con,$post["txtFechaInicial"]);
@@ -42,12 +77,14 @@ class Pagos{
                 exists (
                     select 1
                     from tformaspagopedido fp
-                    join tpedidos p on p.idpedido = fp.idpedido
-                    join tfacturas f on f.idfactura = p.idfactura
+                    join ".$this->relacionPedidoFactura()." pf on pf.idpedido = fp.idpedido
+                    join tfacturas f on f.idfactura = pf.idfactura
                     where fp.idpago = a.idpago
-                      and p.idfactura is not null
-                      and p.idfactura > 0
                       and f.idmetodopago = 1
+                      and (f.status is null or f.status = 1)
+                      and f.uuid is not null
+                      and f.uuid <> ''
+                      and f.saldo > 0
                 ) as tiene_factura
             from
                 tpagos a
@@ -525,17 +562,18 @@ class Pagos{
         }
     }
 
-    // Revierte el efecto de un pago sobre los pedidos que cubrió (abonado/statuspago) y,
-    // si alguno estaba ligado a una factura, le regresa el saldo cobrado. Se usa tanto para
-    // pagos timbrados (tras cancelar el CFDI) como para pagos que nunca llegaron a timbrarse.
+    // Revierte el efecto de un pago sobre los pedidos que cubrió (abonado/statuspago) y le
+    // regresa a cada factura el saldo que su complemento amortizó, según lo registrado en
+    // tpagosfacturas. Se usa tanto para pagos timbrados (tras cancelar el CFDI) como para
+    // pagos que nunca llegaron a timbrarse; en ese segundo caso no hay saldo que devolver,
+    // porque el saldo de la factura solo se descuenta al timbrar el complemento.
     private function revertirEfectoPago($idpago){
         $query = "
         select
             a.idpedido,
-            a.monto,
+            sum(a.monto) as monto,
             b.total,
-            b.abonado,
-            b.idfactura
+            b.abonado
         from
             tformaspagopedido a
         join
@@ -543,14 +581,18 @@ class Pagos{
         on
             b.idpedido = a.idpedido
         where
-            a.idpago = '".$idpago."'";
+            a.idpago = '".$idpago."'
+        group by
+            a.idpedido,
+            b.total,
+            b.abonado";
         $aplicaciones = mysqli_fetch_all(mysqli_query($this->con,$query),MYSQLI_ASSOC);
 
         $ok = true;
         foreach($aplicaciones as $aplicacion){
             $idpedido = (int)$aplicacion["idpedido"];
-            $monto = floatval($aplicacion["monto"]);
-            $nuevoabonado = floatval($aplicacion["abonado"]) - $monto;
+            $monto = sprintf("%.2f", floatval($aplicacion["monto"]));
+            $nuevoabonado = floatval($aplicacion["abonado"]) - floatval($aplicacion["monto"]);
             $statuspago = ($nuevoabonado >= floatval($aplicacion["total"])) ? 1 : 0;
 
             $query = "
@@ -562,19 +604,36 @@ class Pagos{
             where
                 idpedido = '".$idpedido."'";
             $ok = $ok && mysqli_query($this->con,$query);
-
-            if($aplicacion["idfactura"] > 0){
-                $idfacturapagada = (int)$aplicacion["idfactura"];
-                $query = "
-                update
-                    tfacturas
-                set
-                    saldo = saldo + ".$monto."
-                where
-                    idfactura = '".$idfacturapagada."'";
-                $ok = $ok && mysqli_query($this->con,$query);
-            }
         }
+
+        $query = "
+        select
+            idfactura,
+            monto
+        from
+            tpagosfacturas
+        where
+            idpago = '".$idpago."'";
+        $amortizaciones = mysqli_fetch_all(mysqli_query($this->con,$query),MYSQLI_ASSOC);
+
+        foreach($amortizaciones as $amortizacion){
+            $query = "
+            update
+                tfacturas
+            set
+                saldo = saldo + ".sprintf("%.2f", floatval($amortizacion["monto"]))."
+            where
+                idfactura = '".(int)$amortizacion["idfactura"]."'";
+            $ok = $ok && mysqli_query($this->con,$query);
+        }
+
+        $query = "
+        delete
+        from
+            tpagosfacturas
+        where
+            idpago = '".$idpago."'";
+        $ok = $ok && mysqli_query($this->con,$query);
 
         $query = "
         delete
