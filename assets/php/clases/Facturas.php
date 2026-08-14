@@ -453,6 +453,53 @@ class Facturas{
                             idfactura = '".$idfactura."'";
                         
                         if(mysqli_query($this->con,$query)){
+                            // Un pedido puede seguir teniendo otras facturas vigentes
+                            // (facturación parcial). Antes se ponía tpedidos.idfactura en NULL
+                            // a secas, con lo que el pedido quedaba como "no facturado" y sus
+                            // pagos ya no generaban complemento aunque siguiera habiendo una
+                            // factura PPD viva. Ahora se reapunta a la más reciente vigente.
+                            $query = "
+                            select
+                                idpedido
+                            from
+                                tpedidosfacturas
+                            where
+                                idfactura = '".$idfactura."'";
+                            $pedidosafectados = mysqli_fetch_all(mysqli_query($this->con,$query),MYSQLI_ASSOC);
+
+                            $query = "
+                            delete
+                            from
+                                tpedidosfacturas
+                            where
+                                idfactura = '".$idfactura."'";
+                            mysqli_query($this->con,$query);
+
+                            foreach($pedidosafectados as $pedidoafectado){
+                                $query = "
+                                update
+                                    tpedidos
+                                set
+                                    idfactura = (
+                                    select
+                                        max(f.idfactura)
+                                    from
+                                        tpedidosfacturas pf
+                                    join
+                                        tfacturas f
+                                    on
+                                        f.idfactura = pf.idfactura
+                                    where
+                                        pf.idpedido = '".$pedidoafectado["idpedido"]."' and
+                                        (f.status is null or f.status = 1)
+                                    )
+                                where
+                                    idpedido = '".$pedidoafectado["idpedido"]."'";
+                                mysqli_query($this->con,$query);
+                            }
+
+                            // Respaldo para las facturas anteriores a la facturación parcial,
+                            // que solo existen en tpedidos.idfactura
                             $query = "
                             update
                                 tpedidos
@@ -462,14 +509,6 @@ class Facturas{
                                 idfactura = '".$idfactura."'";
                             mysqli_query($this->con,$query);
 
-                            $query = "
-                            delete
-                            from
-                                tpedidosfacturas
-                            where
-                                idfactura = '".$idfactura."'";
-                            mysqli_query($this->con,$query);
-                            
                             $respuesta = array(
                                 "respuesta" => "OK",
                                 "tipo" => "mensajecargar",

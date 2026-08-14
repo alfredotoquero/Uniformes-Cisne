@@ -45,6 +45,9 @@ if ($pagos["respuesta"] == "OK") {
                                 default: echo '<span class="badge bg-danger">CANCELADO</span>'; break;
                             }
                             ?>
+                            <?php if((int)$pago["status"] == 1 && empty($pago["uuid"]) && $pago["tiene_factura"]): ?>
+                                <span class="badge bg-warning text-dark" title="Complemento de pago pendiente de timbrar"><i class="fas fa-clock"></i> COMPLEMENTO PENDIENTE</span>
+                            <?php endif; ?>
                         </td>
                         <td class="text-end">
                             <button class="btn btn-secondary btn-sm mb-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">
