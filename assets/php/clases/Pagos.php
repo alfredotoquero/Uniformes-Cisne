@@ -646,14 +646,568 @@ class Pagos{
         return $ok;
     }
 
-    // Placeholder: en este proyecto no existe (ni en el histórico de Tienda-Uniformes-Cisne se pudo
-    // confirmar) la lógica real para timbrar un complemento de pago ante el SAT. Falta definir el flujo
-    // correcto (generación del CFDI de pago, llamada al PAC) antes de habilitar esta acción.
+    /**
+     * Obtiene las facturas PPD vigentes y con saldo pendiente de un pedido, ordenadas de la
+     * más antigua a la más reciente (así se amortizan las parcialidades en ese orden).
+     *
+     * @param int $idpedido
+     * @return array Facturas del pedido que requieren complemento de pago
+     */
+    private function getFacturasPPDPedido($idpedido){
+        $idpedido = mysqli_real_escape_string($this->con,$idpedido);
+
+        $query = "
+        select distinct
+            f.idfactura,
+            f.serie,
+            f.folio,
+            f.uuid,
+            f.saldo,
+            f.idemisor,
+            f.idrazonsocial,
+            round((f.iva/f.subtotal)*100,0) as impuesto
+        from
+            ".$this->relacionPedidoFactura()." pf
+        join
+            tfacturas f
+        on
+            f.idfactura = pf.idfactura
+        where
+            pf.idpedido = '".$idpedido."' and
+            f.idmetodopago = 1 and
+            (f.status is null or f.status = 1) and
+            f.uuid is not null and
+            f.uuid <> '' and
+            f.saldo > 0
+        order by
+            f.idfactura";
+        $result = mysqli_query($this->con,$query);
+
+        return ($result) ? mysqli_fetch_all($result,MYSQLI_ASSOC) : array();
+    }
+
+    /**
+     * Genera y timbra el complemento de pago de un pago que quedó sin timbrar. Es el mismo
+     * flujo que Tienda-Uniformes-Cisne ejecuta al registrar el pago (Pagos::generarComplementoPago),
+     * duplicado aquí a propósito para poder rescatar desde el admin los pagos de cualquier
+     * sucursal: la lista de la tienda solo muestra los de la sucursal del vendedor conectado.
+     * Si algún día se toca la lógica de timbrado, hay que tocar los dos lados.
+     *
+     * @param array $post Contiene "idpago"
+     * @return array Respuesta en el formato del controlador (respuesta/tipo/mensaje)
+     */
     public function timbrarPago($post){
-        return array(
-            "respuesta" => "ERROR",
-            "mensaje" => "La función de timbrado de pagos aún no está implementada."
-        );
+        try{
+            $idpago = mysqli_real_escape_string($this->con, $post["idpago"]);
+
+            // Recuperamos la información principal del pago
+            $query = "
+            select
+                idcliente,
+                idformapago,
+                fecha,
+                total,
+                uuid,
+                status
+            from
+                tpagos
+            where
+                idpago = '".$idpago."'";
+            $result = mysqli_query($this->con,$query);
+
+            if(mysqli_num_rows($result)==0){
+                throw new Exception("No se pudo recuperar la información del pago");
+            }
+
+            $pago = mysqli_fetch_assoc($result);
+
+            // Un pago timbrado no se puede volver a timbrar: se duplicaría el CFDI y se
+            // descontaría dos veces el saldo de las facturas
+            if(!empty($pago["uuid"])){
+                throw new Exception("Este pago ya tiene un complemento timbrado");
+            }
+
+            if($pago["status"] != 1){
+                throw new Exception("Solo se puede timbrar el complemento de un pago activo");
+            }
+
+            $idcliente = $pago["idcliente"];
+            $idformapago = $pago["idformapago"];
+            $fecha = substr($pago["fecha"], 0, 10);
+            $totalpago = floatval($pago["total"]);
+
+            // Obtenemos los pedidos que cubrió el pago con el monto aplicado a cada uno
+            $query = "
+            select
+                a.idpedido,
+                sum(a.monto) as monto
+            from
+                tformaspagopedido a
+            where
+                a.idpago = '".$idpago."'
+            group by
+                a.idpedido
+            order by
+                a.idpedido";
+            $result = mysqli_query($this->con,$query);
+
+            if(!$result || mysqli_num_rows($result)==0){
+                throw new Exception("No se pudo recuperar la información de los pagos");
+            }
+
+            $pedidos = mysqli_fetch_all($result,MYSQLI_ASSOC);
+
+            // Cada pedido puede tener varias facturas PPD (facturación parcial), así que el
+            // monto abonado se reparte entre ellas de la más antigua a la más reciente, sin
+            // rebasar el saldo de cada una. La parte que no corresponda a ninguna factura
+            // (lo que aún no se ha facturado del pedido) simplemente no se relaciona.
+            $facturas = [];
+            $saldosdisponibles = [];
+            $idtienda = null;
+
+            foreach($pedidos as $pedido){
+                $porAplicar = round(floatval($pedido["monto"]), 2);
+
+                if($idtienda === null){
+                    $query = "
+                    select
+                        idtienda
+                    from
+                        vpedidos
+                    where
+                        idpedido = '".$pedido["idpedido"]."'";
+                    $idtienda = mysqli_fetch_assoc(mysqli_query($this->con, $query))["idtienda"];
+                }
+
+                foreach($this->getFacturasPPDPedido($pedido["idpedido"]) as $factura){
+                    if($porAplicar < 0.01){
+                        break;
+                    }
+
+                    $idfactura = $factura["idfactura"];
+                    $saldo = round(floatval($factura["saldo"]), 2);
+
+                    // El saldo disponible se lleva en memoria para el caso (raro) de que dos
+                    // pedidos del mismo pago compartan factura: así no se relaciona más de lo
+                    // que la factura debe
+                    $disponible = isset($saldosdisponibles[$idfactura]) ? $saldosdisponibles[$idfactura] : $saldo;
+                    $aplicado = round(min($porAplicar, $disponible), 2);
+
+                    if($aplicado < 0.01){
+                        continue;
+                    }
+
+                    $porAplicar = round($porAplicar - $aplicado, 2);
+                    $saldosdisponibles[$idfactura] = round($disponible - $aplicado, 2);
+
+                    // Si dos pedidos comparten factura, se acumula en un solo documento relacionado
+                    if(isset($facturas[$idfactura])){
+                        $facturas[$idfactura]["monto"] = round($facturas[$idfactura]["monto"] + $aplicado, 2);
+                        continue;
+                    }
+
+                    // La parcialidad se cuenta por factura (cuántos complementos la han
+                    // amortizado antes), no por pedido
+                    $query = "
+                    select
+                        count(*) + 1 as parcialidad
+                    from
+                        tpagosfacturas a
+                    join
+                        tpagos b
+                    on
+                        b.idpago = a.idpago
+                    where
+                        a.idfactura = '".$idfactura."' and
+                        a.idpago <> '".$idpago."' and
+                        b.status <> 3";
+                    $parcialidad = mysqli_fetch_assoc(mysqli_query($this->con, $query))["parcialidad"];
+
+                    $facturas[$idfactura] = array(
+                        "idfactura" => $idfactura,
+                        "monto" => $aplicado,
+                        "saldo" => $saldo,
+                        "uuid" => $factura["uuid"],
+                        "serie" => $factura["serie"],
+                        "folio" => $factura["folio"],
+                        "idemisor" => $factura["idemisor"],
+                        "idrazonsocial" => $factura["idrazonsocial"],
+                        "parcialidad" => $parcialidad,
+                        "impuesto" => $factura["impuesto"]
+                    );
+                }
+            }
+
+            $facturas = array_values($facturas);
+
+            if(empty($facturas)){
+                throw new Exception("El pago no corresponde a facturas PPD con saldo pendiente, por lo que no requiere complemento");
+            }
+
+            // Obtener idemisor e idrazonsocial de la primera factura
+            $idemisor = $facturas[0]["idemisor"];
+            $idrazonsocial = $facturas[0]["idrazonsocial"];
+
+            // Un CFDI de pago lleva un solo emisor y un solo receptor, así que no se puede
+            // timbrar un pago que amortice facturas de emisores o razones sociales distintas
+            foreach($facturas as $factura){
+                if($factura["idemisor"] != $idemisor || $factura["idrazonsocial"] != $idrazonsocial){
+                    throw new Exception("El pago amortiza facturas de distinto emisor o razón social; hay que registrarlo por separado");
+                }
+            }
+
+            // Obtener datos del emisor
+            $query = "
+            select
+                *
+            from
+                temisores
+            where
+                idemisor = '".$idemisor."'";
+            $infoEmisor = mysqli_fetch_assoc(mysqli_query($this->con, $query));
+
+            // Obtener datos de la razón social del cliente
+            $query = "
+            select
+                *
+            from
+                tclienterazonessociales
+            where
+                idrazonsocial = '".$idrazonsocial."'";
+            $razonsocial = mysqli_fetch_assoc(mysqli_query($this->con, $query));
+
+            // Calcular total del pago
+            $total = array_sum(array_column($facturas, "monto"));
+
+            // Actualizar registro en tpagos con emisor y razon social
+            $query = "
+            update
+                tpagos
+            set
+                idemisor = '".$idemisor."',
+                idrazonsocial = '".$idrazonsocial."'
+            where
+                idpago = '".$idpago."'";
+
+            if(!mysqli_query($this->con, $query)){
+                throw new Exception("Error al actualizar el registro de pago");
+            }
+
+            // Obtener régimen fiscal del emisor
+            $query = "
+            select
+                regimenfiscal
+            from
+                sat_tcatregimenfiscal
+            where
+                idregimenfiscal = '".$infoEmisor["idregimenfiscal"]."'";
+            $regimen_fiscal = mysqli_fetch_assoc(mysqli_query($this->con, $query))["regimenfiscal"];
+
+            $emisor = array(
+                "Rfc" => $infoEmisor["rfc"],
+                "Nombre" => utf8_decode(trim($infoEmisor["razon_social"])),
+                "RegimenFiscal" => $regimen_fiscal,
+                "LugarExpedicion" => $infoEmisor["codigo_postal"]
+            );
+
+            $receptor = array(
+                "Rfc" => $razonsocial["rfc"],
+                "Nombre" => utf8_decode(trim($razonsocial["razon_social"])),
+                "UsoCFDI" => "CP01",
+                "DomicilioFiscalReceptor" => $razonsocial["codigo_postal"],
+                "RegimenFiscalReceptor" => $razonsocial["regimenfiscal"]
+            );
+
+            // Obtenemos los datos de la forma de pago interna
+            $query = "
+            select
+                idformapago_sat
+            from
+                tcatformaspago
+            where
+                idformapago = '".$idformapago."'";
+            $idformapago = mysqli_fetch_assoc(mysqli_query($this->con,$query))["idformapago_sat"];
+
+            // Obtener clave de forma de pago SAT
+            $query = "
+            select
+                formapago
+            from
+                sat_tcatformaspago
+            where
+                idformapago = '".$idformapago."'";
+            $formapago = mysqli_fetch_assoc(mysqli_query($this->con, $query))["formapago"];
+
+            $datospago = array(
+                "fecha" => $fecha . " 12:00:00",
+                "FormaPago" => $formapago,
+                "moneda" => "MXN",
+                "monto" => sprintf("%.2f", $total),
+                "tipocambio" => 1
+            );
+
+            // Construir documentos relacionados
+            $pagos = array();
+            foreach($facturas as $fac){
+                $pagos[] = array(
+                    "Folio" => $fac["folio"],
+                    "IdDocumento" => $fac["uuid"],
+                    "ImpPagado" => sprintf("%.2f", $fac["monto"]),
+                    "ImpSaldoAnt" => sprintf("%.2f", $fac["saldo"]),
+                    "ImpSaldoInsoluto" => sprintf("%.2f", $fac["saldo"] - $fac["monto"]),
+                    "MonedaDR" => "MXN",
+                    "equivalencia" => 1,
+                    "NumParcialidad" => $fac["parcialidad"],
+                    "Serie" => $fac["serie"],
+                    "ObjetoImpDR" => "02",
+                    "base_iva_trasladado_" . $fac["impuesto"] => sprintf("%.6f", $fac["monto"] / (1 + ($fac["impuesto"] / 100)))
+                );
+            }
+
+            // Obtener numero de certificado, certificado y archivo keypem
+            $ruta = $_SERVER["DOCUMENT_ROOT"]."/emisores/" . str_replace("&", "_", $infoEmisor['rfc']);
+            $numero_certificado = $this->obtenerNumeroCertificado($ruta."/sat/"."certificado.cer");
+            $certificado = $this->obtenerContenidoCertificado($ruta."/sat/"."certificado.cer");
+            $archivo_keypem = file_get_contents($ruta."/sat/"."llave.key.pem");
+
+            // Preparar datos para el timbrador
+            $datos = array(
+                "api_key" => "tek_npzimyh2ajjxpj3p3j2ofozt7c6deej9uu",
+                "Version" => "4.0",
+                "new" => 1,
+                "pruebas" => 0,
+                "numero_certificado" => $numero_certificado,
+                "certificado" => $certificado,
+                "keypem" => $archivo_keypem,
+                "colortxt" => "000000",
+                "tipoComprobante" => "P",
+                "serie" => $infoEmisor["serie_pagos"],
+                "folio" => $infoEmisor["folio_pagos"],
+                "emisor" => $emisor,
+                "receptor" => $receptor,
+                "pago" => $datospago,
+                "pagos" => $pagos
+            );
+
+            // Enviar al timbrador
+            $curl = curl_init();
+
+            curl_setopt_array($curl, array(
+                CURLOPT_URL => "https://api.xptk.app/timbrador/index.php",
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_ENCODING => '',
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_TIMEOUT => 0,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_CUSTOMREQUEST => 'POST',
+                CURLOPT_POSTFIELDS => http_build_query($datos),
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_HTTPHEADER => array(
+                    'Authorization: CH60NP5HQZYUPZEQ'
+                ),
+            ));
+
+            $response = curl_exec($curl);
+
+            if($response === false){
+                throw new Exception("Error de conexión con el timbrador: " . curl_error($curl));
+            }
+
+            $response = json_decode($response, true);
+
+            if($response === null){
+                throw new Exception("Respuesta inválida del timbrador");
+            }
+
+            if($response["response"] != true){
+                throw new Exception("El complemento no pudo ser timbrado (" . $response["mensaje"] . ")");
+            }
+
+            // Timbrado exitoso: actualizar tpagos, incrementar folio, descontar saldo de las
+            // facturas y registrar la amortización, todo en una transacción
+            mysqli_begin_transaction($this->con);
+
+            $query = "
+            update
+                tpagos
+            set
+                serie = '".$infoEmisor["serie_pagos"]."',
+                folio = '".$infoEmisor["folio_pagos"]."',
+                uuid = '".$response["uuid"]."',
+                timbrado = NOW()
+            where
+                idpago = '".$idpago."'";
+            $ok = mysqli_query($this->con, $query);
+
+            $query = "
+            update
+                temisores
+            set
+                folio_pagos = folio_pagos + 1
+            where
+                idemisor = '".$idemisor."'";
+            $ok = $ok && mysqli_query($this->con, $query);
+
+            foreach($facturas as $fac){
+                $monto = sprintf("%.2f", $fac["monto"]);
+
+                $query = "
+                update
+                    tfacturas
+                set
+                    saldo = saldo - ".$monto."
+                where
+                    idfactura = '".$fac["idfactura"]."'";
+                $ok = $ok && mysqli_query($this->con, $query);
+
+                $query = "
+                insert
+                into
+                    tpagosfacturas
+                (
+                    idpago,
+                    idfactura,
+                    monto,
+                    parcialidad
+                ) values (
+                    '".$idpago."',
+                    '".$fac["idfactura"]."',
+                    '".$monto."',
+                    '".$fac["parcialidad"]."'
+                )";
+                $ok = $ok && mysqli_query($this->con, $query);
+            }
+
+            if(!$ok){
+                mysqli_rollback($this->con);
+                throw new Exception("El timbrado fue exitoso pero ocurrió un error al actualizar los datos. Contacta a soporte antes de volver a intentar, porque el CFDI ya existe ante el SAT (UUID ".$response["uuid"].")");
+            }
+
+            mysqli_commit($this->con);
+
+            // Se guardan los documentos en la carpeta del emisor
+            if(!is_dir($ruta."/pagos")){
+                mkdir($ruta."/pagos", 0775, true);
+            }
+
+            file_put_contents($ruta."/pagos/".$response["uuid"].".xml",base64_decode($response["xml"]));
+            file_put_contents($ruta."/pagos/".$response["uuid"].".pdf",base64_decode($response["pdf"]));
+
+            $mensaje = "Se ha timbrado el complemento de pago correctamente";
+
+            // El complemento solo puede relacionar la parte facturada del abono; si sobró
+            // monto (pedido facturado parcialmente) hay que decirlo
+            if(round($totalpago - $total, 2) > 0){
+                $mensaje .= ". Se relacionaron $".number_format($total,2)." de los $".number_format($totalpago,2)." del pago, el resto corresponde a la parte del pedido que aún no está facturada";
+            }
+
+            // Enviar complemento por correo
+            $query = "
+            select
+                correo
+            from
+                tclientes
+            where
+                idcliente = '".$idcliente."'";
+            $correoCliente = mysqli_fetch_assoc(mysqli_query($this->con, $query))["correo"];
+
+            if(!empty($correoCliente)){
+                include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Correos.php");
+                $claseCorreos = new Correos();
+
+                $folio = $infoEmisor["serie_pagos"]."-".$infoEmisor["folio_pagos"];
+                $fecha = date("Y-m-d");
+
+                $logo = $_SERVER["DOCUMENT_ROOT"]."/imagenes/tiendas/".$idtienda."_logo.png";
+                $logo = "data:image/png;base64,".((file_exists($logo)) ? base64_encode(file_get_contents($logo)) : base64_encode(file_get_contents($_SERVER["DOCUMENT_ROOT"]."/assets/images/logo-uniformes-trazo.png")));
+
+                include($_SERVER["DOCUMENT_ROOT"]."/assets/plantillas/correo/envioComplemento.php");
+                include($_SERVER["DOCUMENT_ROOT"]."/assets/plantillas/correo/base.php");
+
+                $envio = $claseCorreos->enviarCorreo(array(
+                    "idtienda" => $idtienda,
+                    "asunto" => "Envío de complemento de pago",
+                    "mensaje" => $cuerpo,
+                    "correos" => array(
+                        $correoCliente
+                    ),
+                    "adjuntos" => array(
+                        array(
+                            "nombre" => $response["uuid"].".xml",
+                            "archivo" => $response["xml"]
+                        ),
+                        array(
+                            "nombre" => $response["uuid"].".pdf",
+                            "archivo" => $response["pdf"]
+                        )
+                    )
+                ));
+
+                $mensaje .= ($envio["result"] == "success")
+                    ? ". El complemento fue enviado por correo electrónico a ".$correoCliente
+                    : ". Sin embargo, no se pudo enviar por correo: ".$envio["mensaje"];
+            }else{
+                $mensaje .= ". No se envió por correo porque el cliente no tiene correo electrónico registrado";
+            }
+
+            $respuesta = array(
+                "respuesta" => "OK",
+                "tipo" => "mensajecargar",
+                "titulo" => "Complemento timbrado",
+                "mensaje" => $mensaje,
+                "formulario" => "formBusqueda"
+            );
+
+        }catch(Exception $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje" => $e->getMessage()
+            );
+        }catch(Throwable $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje" => $e->getMessage()
+            );
+        }finally{
+            return $respuesta;
+        }
+    }
+
+    /**
+     * getNumCer
+     * Obtener el numero de certificado de un archivo .cer
+     * @param  string Path del archivo .cer
+     * @return string Numero de certificado
+     */
+    public function obtenerNumeroCertificado($certificado)
+    {
+        $numero = FALSE;
+        exec("openssl x509 -inform DER -in $certificado -serial", $datacer);
+        //Reemplazamos el texto que no nos interesa(str_replace) y convertimos el string a array(str_split)
+        $serialnumbers = str_split(str_replace("serial=", "", $datacer[0]));
+        //Para despues obtener los numeros en posiciones impares
+        for ($i = 0; $i < count($serialnumbers); $i++) {
+            if ($i % 2 != 0) {
+                $numero .= $serialnumbers[$i];
+            }
+        }
+        return $numero;
+    }
+
+    /**
+     * getCer
+     * Obtener el contenido del certificado
+     * @param  string $certificado Path de certificado
+     * @return string Retorna el contenido del certificado
+     */
+    public function obtenerContenidoCertificado($certificado)
+    {
+        exec("openssl x509 -inform DER -in $certificado", $cer);
+        array_pop($cer);                //elimino el ultimo elemento
+        array_shift($cer);              //y el primero
+        $contenido = implode($cer);     //despues convierto a string
+        return $contenido;
     }
 
     private function esUUIDValido($uuid){
