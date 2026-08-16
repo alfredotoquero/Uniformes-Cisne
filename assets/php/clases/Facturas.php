@@ -287,11 +287,11 @@ class Facturas{
                 b.nombre as usuario,
                 a.idcliente,
                 a.idrazonsocial,
-                c.razon_social as cliente,
-                c.rfc as cliente_rfc,
-                c.idusocfdi,
-                c.idregimenfiscal,
-                c.codigo_postal,
+                case when a.idrazonsocial > 0 then c.razon_social else a.razonsocial end as cliente,
+                case when a.idrazonsocial > 0 then c.rfc else a.rfc end as cliente_rfc,
+                case when a.idrazonsocial > 0 then c.idusocfdi else h.idusocfdi end as idusocfdi,
+                case when a.idrazonsocial > 0 then c.idregimenfiscal else i.idregimenfiscal end as idregimenfiscal,
+                case when a.idrazonsocial > 0 then c.codigo_postal else a.codigo_postal end as codigo_postal,
                 a.idemisor,
                 d.razon_social as emisor,
                 d.rfc as emisor_rfc,
@@ -335,6 +335,14 @@ class Facturas{
                 tpedidosfacturas g
             on
                 g.idfactura = a.idfactura
+            left join
+                sat_tcatusoscfdi h
+            on
+                h.usocfdi = a.usocfdi
+            left join
+                sat_tcatregimenfiscal i
+            on
+                i.regimenfiscal = a.regimenfiscal
             where
                 a.idfactura = '".$idfactura."'";
             $result = mysqli_query($this->con,$query);
