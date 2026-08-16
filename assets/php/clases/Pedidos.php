@@ -3973,6 +3973,12 @@ class Pedidos
             file_put_contents($_SERVER["DOCUMENT_ROOT"]."/txts/facturarPedido.txt",print_r($datos,true)."\n\n".print_r($response,true));
 
             if ($response["response"] == true) {
+                // Cuando el pedido no tiene cliente no se crea razón social, así que los datos
+                // fiscales del receptor solo viven en el CFDI. Se copian en texto a la factura
+                // para que el listado, la refacturación y el complemento de pago los tengan;
+                // si hay idrazonsocial no se duplican, la relación manda.
+                $sinrazonsocial = !($idrazonsocial > 0);
+
                 $query = "
                 insert
                 into
@@ -3981,6 +3987,7 @@ class Pedidos
                     idusuario,
                     ".(($idcliente > 0) ? "idcliente," : "")."
                     ".(($idrazonsocial > 0) ? "idrazonsocial," : "")."
+                    ".(($sinrazonsocial) ? "razonsocial, rfc, codigo_postal, regimenfiscal, usocfdi," : "")."
                     idemisor,
                     idmetodopago,
                     idformapago,
@@ -3996,6 +4003,7 @@ class Pedidos
                     '".$idusuario."',
                     ".(($idcliente>0) ? "'".$idcliente."'," : "")."
                     ".(($idrazonsocial > 0) ? "'".$idrazonsocial."'," : "")."
+                    ".(($sinrazonsocial) ? "'".$razonsocial."', '".$rfc."', '".$codigo_postal."', '".$regimenfiscal."', '".$usocfdi."'," : "")."
                     '".$idemisor."',
                     '".$idmetodopago."',
                     '".$idformapago."',
