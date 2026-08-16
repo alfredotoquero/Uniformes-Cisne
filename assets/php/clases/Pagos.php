@@ -256,8 +256,38 @@ class Pagos{
                 a.idcliente,
                 coalesce(b.nombre, a.cliente) as cliente,
                 a.idrazonsocial,
-                c.razon_social,
-                c.rfc as cliente_rfc,
+                -- Los complementos de facturas sin cliente no tienen razón social relacionada:
+                -- el receptor se recupera de los datos en texto de las facturas que amortizó
+                case when a.idrazonsocial > 0 then c.razon_social else (
+                    select
+                        f.razonsocial
+                    from
+                        tpagosfacturas pf
+                    join
+                        tfacturas f
+                    on
+                        f.idfactura = pf.idfactura
+                    where
+                        pf.idpago = a.idpago and
+                        f.razonsocial is not null and
+                        f.razonsocial <> ''
+                    limit 1
+                ) end as razon_social,
+                case when a.idrazonsocial > 0 then c.rfc else (
+                    select
+                        f.rfc
+                    from
+                        tpagosfacturas pf
+                    join
+                        tfacturas f
+                    on
+                        f.idfactura = pf.idfactura
+                    where
+                        pf.idpago = a.idpago and
+                        f.rfc is not null and
+                        f.rfc <> ''
+                    limit 1
+                ) end as cliente_rfc,
                 a.idemisor,
                 d.razon_social as razon_social_emisor,
                 d.rfc as emisor_rfc,
@@ -392,6 +422,11 @@ class Pagos{
 
             if($pago["status"] != 1){
                 throw new Exception("El complemento de este pago no se encuentra activo.");
+            }
+
+            // El SAT exige el RFC del receptor para cancelar; sin él la petición se rechaza
+            if(empty($pago["cliente_rfc"])){
+                throw new Exception("No se pudo determinar el RFC del receptor del complemento; contacta a soporte.");
             }
 
             $idmotivocancelacion = mysqli_real_escape_string($this->con,$post["slcMotivoCancelacion"]);
@@ -665,6 +700,10 @@ class Pagos{
             f.saldo,
             f.idemisor,
             f.idrazonsocial,
+            f.razonsocial,
+            f.rfc,
+            f.codigo_postal,
+            f.regimenfiscal,
             round((f.iva/f.subtotal)*100,0) as impuesto
         from
             ".$this->relacionPedidoFactura()." pf
@@ -832,6 +871,10 @@ class Pagos{
                         "folio" => $factura["folio"],
                         "idemisor" => $factura["idemisor"],
                         "idrazonsocial" => $factura["idrazonsocial"],
+                        "razonsocial" => $factura["razonsocial"],
+                        "rfc" => $factura["rfc"],
+                        "codigo_postal" => $factura["codigo_postal"],
+                        "regimenfiscal" => $factura["regimenfiscal"],
                         "parcialidad" => $parcialidad,
                         "impuesto" => $factura["impuesto"]
                     );
@@ -848,10 +891,20 @@ class Pagos{
             $idemisor = $facturas[0]["idemisor"];
             $idrazonsocial = $facturas[0]["idrazonsocial"];
 
+            // Las facturas de pedidos sin cliente no tienen razón social relacionada: sus datos
+            // fiscales viven en texto dentro de tfacturas
+            $sinrazonsocial = !($idrazonsocial > 0);
+
             // Un CFDI de pago lleva un solo emisor y un solo receptor, así que no se puede
-            // timbrar un pago que amortice facturas de emisores o razones sociales distintas
+            // timbrar un pago que amortice facturas de emisores o razones sociales distintas.
+            // Sin idrazonsocial se compara el RFC en texto, porque de otro modo dos facturas
+            // con receptores distintos pasarían la validación (ambas con idrazonsocial vacío)
             foreach($facturas as $factura){
-                if($factura["idemisor"] != $idemisor || $factura["idrazonsocial"] != $idrazonsocial){
+                $mismoreceptor = ($sinrazonsocial)
+                    ? strcasecmp(trim($factura["rfc"]), trim($facturas[0]["rfc"])) == 0 && !($factura["idrazonsocial"] > 0)
+                    : $factura["idrazonsocial"] == $idrazonsocial;
+
+                if($factura["idemisor"] != $idemisor || !$mismoreceptor){
                     throw new Exception("El pago amortiza facturas de distinto emisor o razón social; hay que registrarlo por separado");
                 }
             }
@@ -866,26 +919,42 @@ class Pagos{
                 idemisor = '".$idemisor."'";
             $infoEmisor = mysqli_fetch_assoc(mysqli_query($this->con, $query));
 
-            // Obtener datos de la razón social del cliente
-            $query = "
-            select
-                *
-            from
-                tclienterazonessociales
-            where
-                idrazonsocial = '".$idrazonsocial."'";
-            $razonsocial = mysqli_fetch_assoc(mysqli_query($this->con, $query));
+            // Obtener datos de la razón social del cliente. Si la factura no tiene razón social
+            // relacionada (pedido sin cliente) se usan los datos fiscales en texto que quedaron
+            // guardados en tfacturas al timbrarla
+            if($sinrazonsocial){
+                $razonsocial = array(
+                    "rfc" => $facturas[0]["rfc"],
+                    "razon_social" => $facturas[0]["razonsocial"],
+                    "codigo_postal" => $facturas[0]["codigo_postal"],
+                    "regimenfiscal" => $facturas[0]["regimenfiscal"]
+                );
+            }else{
+                $query = "
+                select
+                    *
+                from
+                    tclienterazonessociales
+                where
+                    idrazonsocial = '".$idrazonsocial."'";
+                $razonsocial = mysqli_fetch_assoc(mysqli_query($this->con, $query));
+            }
+
+            if(empty($razonsocial["rfc"]) || empty($razonsocial["razon_social"])){
+                throw new Exception("La factura no tiene datos fiscales del receptor; no se puede timbrar el complemento");
+            }
 
             // Calcular total del pago
             $total = array_sum(array_column($facturas, "monto"));
 
-            // Actualizar registro en tpagos con emisor y razon social
+            // Actualizar registro en tpagos con emisor y razon social. Sin razón social
+            // relacionada la columna se deja nula en vez de guardar un 0 que no existe
             $query = "
             update
                 tpagos
             set
                 idemisor = '".$idemisor."',
-                idrazonsocial = '".$idrazonsocial."'
+                idrazonsocial = ".(($sinrazonsocial) ? "NULL" : "'".$idrazonsocial."'")."
             where
                 idpago = '".$idpago."'";
 
