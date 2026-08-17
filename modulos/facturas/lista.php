@@ -96,6 +96,7 @@ if ($facturas["respuesta"] == "OK") {
                                 <?
                                 }
                                 ?>
+                                <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/historialpagos.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Historial de Pagos</a></li>
                                 <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/historialnotascredito.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Historial de Notas de Crédito</a></li>
                             </ul>
                         </td>
