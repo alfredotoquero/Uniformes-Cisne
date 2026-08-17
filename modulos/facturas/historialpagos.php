@@ -13,12 +13,11 @@ $idfactura = isset($_GET["idfactura"]) ? intval($_GET["idfactura"]) : 0;
 $factura = $claseFacturas->getFactura(array("idfactura" => $idfactura))["factura"];
 $pagos = $clasePagos->getPagosFactura(array("idfactura" => $idfactura))["pagos"];
 
+// Todas las amortizaciones cuentan: la fila se borra cuando el pago se revierte, así que
+// las que siguen aquí son las que están descontadas del saldo de la factura
 $totalaplicado = 0;
 foreach($pagos as $pago){
-    // Los pagos cancelados ya devolvieron su monto al saldo, así que no cuentan
-    if((int)$pago["status"] != 3){
-        $totalaplicado += $pago["monto"];
-    }
+    $totalaplicado += $pago["monto"];
 }
 ?>
 <div style="width:900px;">
@@ -42,7 +41,6 @@ foreach($pagos as $pago){
                         <th class="text-center">Parcialidad</th>
                         <th class="text-end">Total del pago</th>
                         <th class="text-end">Aplicado a esta factura</th>
-                        <th>Estado</th>
                         <th style="width: 60px;"></th>
                     </tr>
                 </thead>
@@ -56,16 +54,6 @@ foreach($pagos as $pago){
                             <td class="text-center"><?= $pago["parcialidad"]; ?></td>
                             <td class="text-end">$<?= number_format($pago["total"],2); ?></td>
                             <td class="text-end">$<?= number_format($pago["monto"],2); ?></td>
-                            <td>
-                                <?php
-                                switch((int)$pago["status"]){
-                                    case 1:  echo '<span class="badge bg-success">ACTIVO</span>'; break;
-                                    case 2:  echo '<span class="badge bg-warning text-dark">PROCESO DE CANCELACIÓN</span>'; break;
-                                    case 4:  echo '<span class="badge bg-info text-dark">COMPLEMENTO CANCELADO</span>'; break;
-                                    default: echo '<span class="badge bg-danger">CANCELADO</span>'; break;
-                                }
-                                ?>
-                            </td>
                             <td class="text-end">
                                 <?php if(!empty($pago["uuid"])){ ?>
                                     <a href="javascript:;" onclick="solicitudServidor('pagos','verPDF','idpago=<?= $pago['idpago'] ?>','');" class="btn btn-secondary btn-sm" title="Ver PDF"><i class="uil uil-file-alt"></i></a>
@@ -78,12 +66,12 @@ foreach($pagos as $pago){
                     <tr>
                         <th colspan="6" class="text-end">Total aplicado</th>
                         <th class="text-end">$<?= number_format($totalaplicado,2); ?></th>
-                        <th colspan="2"></th>
+                        <th></th>
                     </tr>
                     <tr>
                         <th colspan="6" class="text-end">Saldo de la factura</th>
                         <th class="text-end">$<?= number_format($factura["saldo"],2); ?></th>
-                        <th colspan="2"></th>
+                        <th></th>
                     </tr>
                 </tfoot>
             </table>

@@ -51,19 +51,16 @@ class Facturas{
                 g.idpedido,
                 h.folio as folio_ticket,
                 (
+                    -- Basta con que exista la amortización: la fila solo se crea al timbrar
+                    -- el complemento y se borra al revertir el pago, así que su existencia
+                    -- es justo lo que significa que la factura ya recibió un pago. El estado
+                    -- del complemento no cuenta: cancelar el CFDI no deshace el pago
                     select
                         count(*)
                     from
                         tpagosfacturas pf
-                    inner join
-                        tpagos p
-                    on
-                        p.idpago = pf.idpago
                     where
-                        pf.idfactura = a.idfactura and
-                        p.status = 1 and
-                        p.uuid is not null and
-                        p.uuid <> ''
+                        pf.idfactura = a.idfactura
                 ) as pagos,
                 (
                     select
