@@ -193,6 +193,16 @@ class NotasCredito{
                 throw new Exception("Debes indicar el método y la forma de pago de la nota de crédito");
             }
 
+            // En PPD el pago todavía no se conoce, así que la única forma válida es
+            // "99 Por definir"; en PUE pasa lo contrario, la forma siempre está definida
+            if($metodopago=="PPD" && $formapago!="99"){
+                throw new Exception("Con método de pago PPD la forma de pago debe ser 99 - Por definir");
+            }
+
+            if($metodopago=="PUE" && $formapago=="99"){
+                throw new Exception("Con método de pago PUE la forma de pago no puede ser 99 - Por definir");
+            }
+
             $rfc_emisor = str_replace("&","_",$factura["rfc_emisor"]);
             $ruta = $_SERVER["DOCUMENT_ROOT"]."/emisores/".$rfc_emisor;
 

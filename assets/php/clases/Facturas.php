@@ -61,6 +61,7 @@ class Facturas{
                         p.idpago = pf.idpago
                     where
                         pf.idfactura = a.idfactura and
+                        p.status = 1 and
                         p.uuid is not null and
                         p.uuid <> ''
                 ) as pagos,

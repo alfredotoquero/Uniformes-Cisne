@@ -166,6 +166,65 @@ class Pagos{
         }
     }
 
+    /**
+     * Pagos que amortizaron una factura, con el monto que se le aplicó a cada uno. Solo
+     * existen registros para los pagos cuyo complemento se timbró, que es cuando se
+     * descuenta el saldo de la factura.
+     *
+     * @access public
+     * @param array $post Contiene "idfactura"
+     * @return array
+     */
+    public function getPagosFactura($post){
+        try{
+            $idfactura = mysqli_real_escape_string($this->con,$post["idfactura"]);
+
+            $query = "
+            select
+                a.idpagofactura,
+                a.idpago,
+                a.monto,
+                a.parcialidad,
+                b.serie,
+                b.folio,
+                b.uuid,
+                b.total,
+                b.fecha,
+                b.timbrado,
+                b.status,
+                c.formapago,
+                c.descripcion as descripcion_formapago
+            from
+                tpagosfacturas a
+            inner join
+                tpagos b
+            on
+                b.idpago = a.idpago
+            left join
+                sat_tcatformaspago c
+            on
+                c.idformapago = b.idformapago
+            where
+                a.idfactura = '".$idfactura."'
+            order by
+                b.timbrado, a.idpagofactura";
+
+            $result = mysqli_query($this->con,$query);
+
+            $respuesta = array(
+                "respuesta" => "OK",
+                "pagos" => ($result) ? mysqli_fetch_all($result,MYSQLI_ASSOC) : array()
+            );
+        }catch(Exception $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje" => $e->getMessage()
+            );
+        }finally{
+            return $respuesta;
+        }
+    }
+
     public function getPDF($idpago){
         try{
             $idpago = mysqli_real_escape_string($this->con,$idpago);

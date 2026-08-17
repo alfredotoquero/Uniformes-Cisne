@@ -68,10 +68,10 @@ $_SESSION["authToken"] = sha1(uniqid(microtime(), true));
         </div>
         <div class="mb-3">
             <label for="slcMetodoPago" class="form-label">Método de pago<span>*</span></label>
-            <select class="form-control requerido" name="slcMetodoPago" id="slcMetodoPago" data-mensajeerror="Debes indicar el método de pago">
+            <select class="form-control requerido" name="slcMetodoPago" id="slcMetodoPago" data-mensajeerror="Debes indicar el método de pago" onchange="cambiarMetodoPago();">
                 <option value="0">--Seleccionar--</option>
                 <?php foreach($metodospago as $metodopago){ ?>
-                    <option value="<?= $metodopago["idmetodopago"] ?>" data-clave="<?= $metodopago["metodopago"] ?>"><?= $metodopago["metodopago"]." - ".$metodopago["descripcion"] ?></option>
+                    <option value="<?= $metodopago["idmetodopago"] ?>" data-clave="<?= $metodopago["metodopago"] ?>" <?= ($metodopago["idmetodopago"]==$factura["idmetodopago"]) ? "selected" : "" ?>><?= $metodopago["metodopago"]." - ".$metodopago["descripcion"] ?></option>
                 <?php } ?>
             </select>
         </div>
@@ -80,7 +80,7 @@ $_SESSION["authToken"] = sha1(uniqid(microtime(), true));
             <select class="form-control requerido" name="slcFormaPago" id="slcFormaPago" data-mensajeerror="Debes indicar la forma de pago">
                 <option value="0">--Seleccionar--</option>
                 <?php foreach($formaspago as $formapago){ ?>
-                    <option value="<?= $formapago["idformapago"] ?>" data-clave="<?= $formapago["formapago"] ?>"><?= $formapago["formapago"]." - ".$formapago["descripcion"] ?></option>
+                    <option value="<?= $formapago["idformapago"] ?>" data-clave="<?= $formapago["formapago"] ?>" <?= ($formapago["idformapago"]==$factura["idformapago"]) ? "selected" : "" ?>><?= $formapago["formapago"]." - ".$formapago["descripcion"] ?></option>
                 <?php } ?>
             </select>
         </div>
@@ -125,11 +125,22 @@ $_SESSION["authToken"] = sha1(uniqid(microtime(), true));
     ?>
 </div>
 <script>
+// Catálogo completo de formas de pago: el select se vuelve a armar cada vez que cambia
+// el método, porque las claves permitidas dependen de él
+var formasPago = [];
+
 $(document).ready(function () {
-    // Una nota de crédito no se cobra: por defecto se emite PUE / Por definir, y el
-    // anticipo con Compensación, que es lo que el SAT espera en cada caso
-    seleccionarPorClave("#slcMetodoPago", "PUE");
-    seleccionarPorClave("#slcFormaPago", "21");
+    $("#slcFormaPago option").each(function () {
+        formasPago.push({
+            id: $(this).val(),
+            clave: $(this).data("clave"),
+            texto: $(this).text(),
+        });
+    });
+
+    // La nota de crédito hereda el método y la forma de pago de la factura; si esa
+    // combinación no es válida, cambiarMetodoPago() la corrige
+    cambiarMetodoPago();
     calcularTotales();
 });
 
@@ -142,6 +153,38 @@ function seleccionarPorClave(selector, clave) {
     });
 }
 
+// PPD solo admite "99 Por definir" (el pago aún no se conoce) y PUE no la admite, porque
+// en una sola exhibición la forma de pago siempre está definida
+function cambiarMetodoPago() {
+    var metodo = $("#slcMetodoPago option:selected").data("clave");
+    var seleccionada = $("#slcFormaPago option:selected").data("clave");
+    var opciones = "";
+
+    $.each(formasPago, function (i, forma) {
+        if (forma.id == 0) {
+            opciones += '<option value="0">--Seleccionar--</option>';
+            return;
+        }
+        if (metodo == "PPD" && forma.clave != "99") return;
+        if (metodo == "PUE" && forma.clave == "99") return;
+
+        opciones += '<option value="' + forma.id + '" data-clave="' + forma.clave + '">' + forma.texto + "</option>";
+    });
+
+    $("#slcFormaPago").html(opciones);
+
+    if (metodo == "PPD") {
+        seleccionarPorClave("#slcFormaPago", "99");
+    } else if (seleccionada && seleccionada != "99") {
+        seleccionarPorClave("#slcFormaPago", seleccionada);
+    }
+
+    // El anticipo se aplica, no se cobra: su forma de pago es 30 cuando el método lo permite
+    if ($("#slcTipoRelacion").val() == "07" && metodo == "PUE") {
+        seleccionarPorClave("#slcFormaPago", "30");
+    }
+}
+
 function cambiarTipoRelacion() {
     var tipo = $("#slcTipoRelacion").val();
 
@@ -149,14 +192,22 @@ function cambiarTipoRelacion() {
         $("#txtCantidad").val(1);
         $("#divCantidad").hide();
         $("#lblMonto").html('Monto del anticipo (sin IVA)<span>*</span>');
-        seleccionarPorClave("#slcFormaPago", "20");
+        if ($("#slcMetodoPago option:selected").data("clave") == "PUE") {
+            seleccionarPorClave("#slcFormaPago", "30");
+        }
     } else {
         $("#divCantidad").show();
         $("#lblMonto").html('Precio unitario (sin IVA)<span>*</span>');
-        seleccionarPorClave("#slcFormaPago", "21");
     }
 
     calcularTotales();
+}
+
+function formatoMoneda(valor) {
+    return valor.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
 }
 
 function calcularTotales() {
@@ -170,10 +221,14 @@ function calcularTotales() {
     var total = Math.round((subtotal + iva) * 100) / 100;
     var saldonuevo = Math.round((saldo - total) * 100) / 100;
 
-    $("#lblSubtotal").html(subtotal.toFixed(2));
-    $("#lblIVA").html(iva.toFixed(2));
-    $("#lblTotal").html(total.toFixed(2));
-    $("#lblSaldoNuevo").html((saldonuevo < 0 ? 0 : saldonuevo).toFixed(2));
+    // El total con formato no se puede volver a leer como número, así que se guarda
+    // aparte para las validaciones
+    $("#lblTotal").data("total", total);
+
+    $("#lblSubtotal").html(formatoMoneda(subtotal));
+    $("#lblIVA").html(formatoMoneda(iva));
+    $("#lblTotal").html(formatoMoneda(total));
+    $("#lblSaldoNuevo").html(formatoMoneda(saldonuevo < 0 ? 0 : saldonuevo));
 
     if (total > saldo + 0.01) {
         $("#divAlertaSaldo").show();
@@ -188,7 +243,7 @@ function validarNotaCredito() {
     var cantidad = parseFloat($("#txtCantidad").val()) || 0;
     var monto = parseFloat($("#txtMonto").val()) || 0;
     var saldo = parseFloat($("#saldo").val()) || 0;
-    var total = parseFloat($("#lblTotal").html()) || 0;
+    var total = parseFloat($("#lblTotal").data("total")) || 0;
 
     if (cantidad <= 0) {
         Swal.fire("Error", "La cantidad debe ser mayor a cero.", "error");
@@ -207,7 +262,7 @@ function validarNotaCredito() {
 
     Swal.fire({
         title: "Atención",
-        text: "Se timbrará una nota de crédito por $" + total.toFixed(2) + " ante el SAT. Esta operación no se puede deshacer desde el sistema.",
+        text: "Se timbrará una nota de crédito por $" + formatoMoneda(total) + " ante el SAT. Esta operación no se puede deshacer desde el sistema.",
         icon: "warning",
         showCancelButton: true,
         confirmButtonColor: "#3085d6",
