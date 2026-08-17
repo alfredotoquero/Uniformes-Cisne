@@ -75,8 +75,15 @@ if ($facturas["respuesta"] == "OK") {
                                 <?
                                 }
                                 if ($factura["status"] == 1) {
-                                ?>
-                                    <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/refacturar.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Refacturar</a></li>
+                                    // Refacturar reemite los conceptos del pedido, así que solo
+                                    // aplica a las facturas que tienen uno: las emitidas desde un
+                                    // ticket se corrigen desde el punto de venta
+                                    if ($factura["idpedido"]) {
+                                    ?>
+                                        <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/refacturar.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Refacturar</a></li>
+                                    <?
+                                    }
+                                    ?>
                                     <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/cancelar.php?idfactura=<?= $factura["idfactura"] ?>" class="dropdown-item">Cancelar Factura</a></li>
                                     <?
                                     // La nota de crédito solo tiene sentido mientras quede saldo por
