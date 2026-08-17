@@ -43,12 +43,36 @@ class Facturas{
                 a.subtotal,
                 a.iva,
                 a.total,
+                a.saldo,
                 a.uuid,
                 a.status,
                 a.timbrado,
                 a.registro,
                 g.idpedido,
-                h.folio as folio_ticket
+                h.folio as folio_ticket,
+                (
+                    select
+                        count(*)
+                    from
+                        tpagosfacturas pf
+                    inner join
+                        tpagos p
+                    on
+                        p.idpago = pf.idpago
+                    where
+                        pf.idfactura = a.idfactura and
+                        p.uuid is not null and
+                        p.uuid <> ''
+                ) as pagos,
+                (
+                    select
+                        count(*)
+                    from
+                        tnotascredito nc
+                    where
+                        nc.idfactura = a.idfactura and
+                        nc.status = 1
+                ) as notascredito
             from
                 tfacturas a
             left join
@@ -310,6 +334,7 @@ class Facturas{
                 a.subtotal,
                 a.iva,
                 a.total,
+                a.saldo,
                 a.uuid,
                 a.status,
                 a.timbrado,
