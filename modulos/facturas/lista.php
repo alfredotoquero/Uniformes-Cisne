@@ -70,6 +70,14 @@ if ($facturas["respuesta"] == "OK") {
                                     <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/cancelar.php?idfactura=<?= $factura["idfactura"] ?>" class="dropdown-item">Cancelar Factura</a></li>
                                 <?
                                 }
+                                // La cancelación quedó pendiente de que el receptor la acepte
+                                // o la rechace ante el SAT: desde aquí se reconsulta y se
+                                // resuelve sin esperar al cronjob
+                                if ($factura["status"] == 2) {
+                                ?>
+                                    <li><a href="javascript:;" onclick="solicitudServidor('facturas','verificarEstatusSAT','idfactura=<?= $factura['idfactura'] ?>','');" class="dropdown-item">Verificar estatus en SAT</a></li>
+                                <?
+                                }
                                 ?>
                             </ul>
                         </td>

@@ -79,6 +79,15 @@ if ($pagos["respuesta"] == "OK") {
                                 <?
                                 }
 
+                                // La cancelación del complemento quedó pendiente de que el
+                                // receptor la acepte o la rechace ante el SAT: desde aquí se
+                                // reconsulta y se resuelve sin esperar al cronjob
+                                if ($pago["status"] == 2 && !empty($pago["uuid"])) {
+                                ?>
+                                    <li><a href="javascript:;" onclick="solicitudServidor('pagos','verificarEstatusSAT','idpago=<?= $pago['idpago'] ?>','');" class="dropdown-item">Verificar estatus en SAT</a></li>
+                                <?
+                                }
+
                                 // Un pago cancelado que nunca se timbró no tiene ninguna acción
                                 // posible: sin esto el menú se abriría vacío
                                 if (empty($pago["uuid"]) && $pago["status"] != 1 && $pago["status"] != 4) {

@@ -2,10 +2,13 @@
 class Pagos{
 
     private $con;
+    private $claseSAT;
 
     public function __construct(){
         include($_SERVER["DOCUMENT_ROOT"]."/assets/php/otros/con.php");
+        include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/SAT.php");
         $this->con = $con;
+        $this->claseSAT = new SAT();
     }
 
     /**
@@ -535,6 +538,125 @@ class Pagos{
         }finally{
             return $respuesta;
         }
+    }
+
+    /**
+     * Reconsulta ante el SAT un complemento de pago que quedó en proceso de cancelación y
+     * aplica el desenlace: lo marca como cancelado (status 4, dejando el pago vivo para que
+     * el usuario decida cancelarlo), lo regresa a activo si el receptor rechazó la solicitud,
+     * o lo deja igual si la solicitud sigue viva.
+     *
+     * Sirve tanto para el cronjob que barre todos los complementos en proceso como para el
+     * botón "Verificar estatus en SAT" del listado.
+     *
+     * @access public
+     * @param array $post   Debe contener idpago. Con "simular" => true consulta al SAT y
+     *                      reporta el desenlace, pero no modifica ningún registro.
+     * @return array
+     */
+    public function verificarEstatusSAT($post){
+        try{
+            $idpago = mysqli_real_escape_string($this->con,$post["idpago"]);
+            $simular = !empty($post["simular"]);
+
+            $pago = $this->getPago(array(
+                "idpago" => $idpago
+            ));
+
+            if($pago["respuesta"] != "OK"){
+                throw new Exception($pago["mensaje"]);
+            }
+
+            $pago = $pago["pago"];
+
+            if($pago["status"] != 2){
+                throw new Exception("El complemento de este pago no se encuentra en proceso de cancelación.");
+            }
+
+            if(empty($pago["uuid"])){
+                throw new Exception("Este pago no tiene un complemento timbrado; no hay nada que consultar ante el SAT.");
+            }
+
+            $consulta = $this->claseSAT->consultarEstatusCFDI(
+                $this->claseSAT->rutaXMLComprobante($_SERVER["DOCUMENT_ROOT"],$pago["emisor_rfc"],"pagos",$pago["uuid"]),
+                $pago["emisor_rfc"],
+                $pago["cliente_rfc"]
+            );
+
+            if($consulta["respuesta"] != "OK"){
+                throw new Exception($consulta["mensaje"]);
+            }
+
+            if($consulta["resultado"] == "cancelado" || $consulta["resultado"] == "activo"){
+                // Cancelado deja el pago en 4: el complemento ya no existe ante el SAT, pero
+                // revertir el efecto del pago sobre pedidos y saldos sigue siendo una decisión
+                // del usuario a través de "Cancelar pago".
+                $nuevostatus = ($consulta["resultado"] == "cancelado") ? "4" : "1";
+
+                if($consulta["resultado"] == "cancelado"){
+                    $titulo = "Complemento cancelado";
+                    $consulta["mensaje"] .= " Ahora puedes cancelar el pago.";
+                }else{
+                    $titulo = "Complemento activo";
+                }
+
+                if(!$simular){
+                    $query = "
+                    update
+                        tpagos
+                    set
+                        status = '".$nuevostatus."'
+                    where
+                        idpago = '".$idpago."'";
+
+                    if(!mysqli_query($this->con,$query)){
+                        throw new Exception("El SAT resolvió la solicitud de cancelación, pero no se pudo actualizar el registro del pago. Contacta a soporte.");
+                    }
+                }
+            }else{
+                $titulo = "Cancelación en proceso";
+            }
+
+            if($simular){
+                $consulta["mensaje"] = "[SIMULACIÓN] ".$consulta["mensaje"];
+            }
+
+            $respuesta = array_merge($consulta,array(
+                "tipo" => "mensajecargar",
+                "titulo" => $titulo,
+                "formulario" => "formBusqueda"
+            ));
+        }catch(Exception $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje" => $e->getMessage()
+            );
+        }finally{
+            return $respuesta;
+        }
+    }
+
+    /**
+     * Devuelve los ids de los pagos cuyo complemento quedó en proceso de cancelación, para
+     * que el cronjob los reconsulte.
+     *
+     * @access public
+     * @return array
+     */
+    public function getPagosEnProcesoCancelacion(){
+        $query = "
+        select
+            idpago
+        from
+            tpagos
+        where
+            status = 2 and
+            uuid is not null and
+            uuid <> ''
+        order by
+            idpago";
+
+        return mysqli_fetch_all(mysqli_query($this->con,$query),MYSQLI_ASSOC);
     }
 
     // Cierra el pago como tal: revierte su efecto sobre el pedido/factura y lo marca
