@@ -2,7 +2,7 @@
 include($_SERVER["DOCUMENT_ROOT"]."/assets/php/otros/sesion.php");
 include($_SERVER["DOCUMENT_ROOT"]."/assets/php/otros/seguridad.php");
 include($_SERVER["DOCUMENT_ROOT"] . "/assets/php/otros/generales.php");
-include($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/SAT.php");
+include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/SAT.php");
 include($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Facturas.php");
 
 $sat = new SAT();

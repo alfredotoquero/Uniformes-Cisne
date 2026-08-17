@@ -2,10 +2,13 @@
 class Facturas{
 
     private $con;
+    private $claseSAT;
 
     public function __construct(){
         include($_SERVER["DOCUMENT_ROOT"]."/assets/php/otros/con.php");
+        include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/SAT.php");
         $this->con = $con;
+        $this->claseSAT = new SAT();
     }
 
     public function getFacturas($post){
@@ -408,9 +411,9 @@ class Facturas{
                 $pwdPfx = uniqid();
 
                 if($this->generarPfx($keypem,$cerpem,$pfx,$pwdPfx)){
-                    $xml = simplexml_load_file($_SERVER["DOCUMENT_ROOT"]."/emisores/".$factura["emisor_rfc"]."/facturas/".$factura["uuid"].".xml");
+                    $xml = simplexml_load_file($this->claseSAT->rutaXMLComprobante($_SERVER["DOCUMENT_ROOT"],$factura["emisor_rfc"],"facturas",$factura["uuid"]));
                     $namespaces = $xml->getNamespaces(true);
-                    $arrayXml = $this->XMLNode($xml, $namespaces);
+                    $arrayXml = $this->claseSAT->XMLNode($xml, $namespaces);
                     $total = $arrayXml['Total'];
 
                     // Se manda a cancelar la factura al SAT
@@ -452,76 +455,33 @@ class Facturas{
                     curl_close($curl);
 
                     if($response["status"]=="success"){
+                        // statusCFDI 201 = "cancelado con aceptación pendiente": el receptor
+                        // tiene 3 días para aceptar o rechazar ante el SAT. Mientras tanto la
+                        // factura sigue viva, así que no se desliga del pedido: si el receptor
+                        // rechaza, la relación tiene que seguir intacta. El desligue ocurre
+                        // hasta que la cancelación se confirma, aquí o en verificarEstatusSAT.
+                        $esDefinitiva = ($response["statusCFDI"] != "201");
+
                         $query = "
                         update
                             tfacturas
                         set
-                            status = '".(($response["statusCFDI"]=="201") ? "2" : "3")."'
+                            status = '".($esDefinitiva ? "3" : "2")."'
                         where
                             idfactura = '".$idfactura."'";
-                        
+
                         if(mysqli_query($this->con,$query)){
-                            // Un pedido puede seguir teniendo otras facturas vigentes
-                            // (facturación parcial). Antes se ponía tpedidos.idfactura en NULL
-                            // a secas, con lo que el pedido quedaba como "no facturado" y sus
-                            // pagos ya no generaban complemento aunque siguiera habiendo una
-                            // factura PPD viva. Ahora se reapunta a la más reciente vigente.
-                            $query = "
-                            select
-                                idpedido
-                            from
-                                tpedidosfacturas
-                            where
-                                idfactura = '".$idfactura."'";
-                            $pedidosafectados = mysqli_fetch_all(mysqli_query($this->con,$query),MYSQLI_ASSOC);
-
-                            $query = "
-                            delete
-                            from
-                                tpedidosfacturas
-                            where
-                                idfactura = '".$idfactura."'";
-                            mysqli_query($this->con,$query);
-
-                            foreach($pedidosafectados as $pedidoafectado){
-                                $query = "
-                                update
-                                    tpedidos
-                                set
-                                    idfactura = (
-                                    select
-                                        max(f.idfactura)
-                                    from
-                                        tpedidosfacturas pf
-                                    join
-                                        tfacturas f
-                                    on
-                                        f.idfactura = pf.idfactura
-                                    where
-                                        pf.idpedido = '".$pedidoafectado["idpedido"]."' and
-                                        (f.status is null or f.status = 1)
-                                    )
-                                where
-                                    idpedido = '".$pedidoafectado["idpedido"]."'";
-                                mysqli_query($this->con,$query);
+                            if($esDefinitiva){
+                                $this->desligarFacturaDePedidos($idfactura);
                             }
-
-                            // Respaldo para las facturas anteriores a la facturación parcial,
-                            // que solo existen en tpedidos.idfactura
-                            $query = "
-                            update
-                                tpedidos
-                            set
-                                idfactura = NULL
-                            where
-                                idfactura = '".$idfactura."'";
-                            mysqli_query($this->con,$query);
 
                             $respuesta = array(
                                 "respuesta" => "OK",
                                 "tipo" => "mensajecargar",
-                                "titulo" => "Factura cancelada",
-                                "mensaje" => "La factura se ha cancelado correctamente.",
+                                "titulo" => $esDefinitiva ? "Factura cancelada" : "Cancelación en proceso",
+                                "mensaje" => $esDefinitiva
+                                    ? "La factura se ha cancelado correctamente."
+                                    : "La cancelación se envió al SAT y quedó pendiente de aceptación por el receptor. La factura seguirá relacionada con su pedido hasta que se confirme la cancelación.",
                                 "formulario" => "formBusqueda"
                             );
                         }else{
@@ -546,83 +506,208 @@ class Facturas{
         }
     }
 
+    /**
+     * Rompe la relación de una factura cancelada con sus pedidos.
+     *
+     * Un pedido puede seguir teniendo otras facturas vigentes (facturación parcial). Antes se
+     * ponía tpedidos.idfactura en NULL a secas, con lo que el pedido quedaba como "no
+     * facturado" y sus pagos ya no generaban complemento aunque siguiera habiendo una factura
+     * PPD viva. Por eso se reapunta a la más reciente vigente en lugar de vaciarlo.
+     *
+     * Es idempotente: al borrar las filas de tpedidosfacturas, una segunda ejecución no
+     * encuentra nada que desligar.
+     *
+     * @access private
+     * @param string $idfactura
+     * @return void
+     */
+    private function desligarFacturaDePedidos($idfactura){
+        $query = "
+        select
+            idpedido
+        from
+            tpedidosfacturas
+        where
+            idfactura = '".$idfactura."'";
+        $pedidosafectados = mysqli_fetch_all(mysqli_query($this->con,$query),MYSQLI_ASSOC);
+
+        $query = "
+        delete
+        from
+            tpedidosfacturas
+        where
+            idfactura = '".$idfactura."'";
+        mysqli_query($this->con,$query);
+
+        foreach($pedidosafectados as $pedidoafectado){
+            $query = "
+            update
+                tpedidos
+            set
+                idfactura = (
+                select
+                    max(f.idfactura)
+                from
+                    tpedidosfacturas pf
+                join
+                    tfacturas f
+                on
+                    f.idfactura = pf.idfactura
+                where
+                    pf.idpedido = '".$pedidoafectado["idpedido"]."' and
+                    (f.status is null or f.status = 1)
+                )
+            where
+                idpedido = '".$pedidoafectado["idpedido"]."'";
+            mysqli_query($this->con,$query);
+        }
+
+        // Respaldo para las facturas anteriores a la facturación parcial,
+        // que solo existen en tpedidos.idfactura
+        $query = "
+        update
+            tpedidos
+        set
+            idfactura = NULL
+        where
+            idfactura = '".$idfactura."'";
+        mysqli_query($this->con,$query);
+    }
+
+    /**
+     * Reconsulta ante el SAT una factura que quedó en proceso de cancelación y aplica el
+     * desenlace: la marca como cancelada, la regresa a activa si el receptor rechazó la
+     * solicitud, o la deja igual si la solicitud sigue viva.
+     *
+     * Sirve tanto para el cronjob que barre todas las facturas en proceso como para el botón
+     * "Verificar estatus en SAT" del listado, por eso devuelve los campos que usa el front
+     * (tipo/titulo/mensaje/formulario) además del desenlace en "resultado".
+     *
+     * @access public
+     * @param array $post   Debe contener idfactura. Con "simular" => true consulta al SAT
+     *                      y reporta el desenlace, pero no modifica ningún registro.
+     * @return array
+     */
+    public function verificarEstatusSAT($post){
+        try{
+            $idfactura = mysqli_real_escape_string($this->con,$post["idfactura"]);
+            $simular = !empty($post["simular"]);
+
+            $factura = $this->getFactura(array(
+                "idfactura" => $idfactura
+            ));
+
+            if($factura["respuesta"] != "OK"){
+                throw new Exception($factura["mensaje"]);
+            }
+
+            $factura = $factura["factura"];
+
+            if($factura["status"] != 2){
+                throw new Exception("Esta factura no se encuentra en proceso de cancelación.");
+            }
+
+            if(empty($factura["uuid"])){
+                throw new Exception("Esta factura no tiene UUID; no hay nada que consultar ante el SAT.");
+            }
+
+            $consulta = $this->claseSAT->consultarEstatusCFDI(
+                $this->claseSAT->rutaXMLComprobante($_SERVER["DOCUMENT_ROOT"],$factura["emisor_rfc"],"facturas",$factura["uuid"]),
+                $factura["emisor_rfc"],
+                $factura["cliente_rfc"]
+            );
+
+            if($consulta["respuesta"] != "OK"){
+                throw new Exception($consulta["mensaje"]);
+            }
+
+            if($consulta["resultado"] == "cancelado"){
+                $titulo = "Factura cancelada";
+
+                if(!$simular){
+                    $query = "
+                    update
+                        tfacturas
+                    set
+                        status = '3'
+                    where
+                        idfactura = '".$idfactura."'";
+
+                    if(!mysqli_query($this->con,$query)){
+                        throw new Exception("El SAT confirma la cancelación, pero no se pudo actualizar el registro de la factura. Contacta a soporte.");
+                    }
+
+                    // Hasta ahora la factura seguía relacionada con su pedido porque la
+                    // cancelación podía rechazarse; ya confirmada, se rompe la relación.
+                    $this->desligarFacturaDePedidos($idfactura);
+                }
+            }else if($consulta["resultado"] == "activo"){
+                $titulo = "Factura activa";
+
+                if(!$simular){
+                    $query = "
+                    update
+                        tfacturas
+                    set
+                        status = '1'
+                    where
+                        idfactura = '".$idfactura."'";
+
+                    if(!mysqli_query($this->con,$query)){
+                        throw new Exception("La cancelación no procedió ante el SAT, pero no se pudo reactivar el registro de la factura. Contacta a soporte.");
+                    }
+                }
+            }else{
+                $titulo = "Cancelación en proceso";
+            }
+
+            if($simular){
+                $consulta["mensaje"] = "[SIMULACIÓN] ".$consulta["mensaje"];
+            }
+
+            $respuesta = array_merge($consulta,array(
+                "tipo" => "mensajecargar",
+                "titulo" => $titulo,
+                "formulario" => "formBusqueda"
+            ));
+        }catch(Exception $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje" => $e->getMessage()
+            );
+        }finally{
+            return $respuesta;
+        }
+    }
+
+    /**
+     * Devuelve los ids de las facturas que quedaron en proceso de cancelación, para que el
+     * cronjob las reconsulte.
+     *
+     * @access public
+     * @return array
+     */
+    public function getFacturasEnProcesoCancelacion(){
+        $query = "
+        select
+            idfactura
+        from
+            tfacturas
+        where
+            status = 2 and
+            uuid is not null and
+            uuid <> ''
+        order by
+            idfactura";
+
+        return mysqli_fetch_all(mysqli_query($this->con,$query),MYSQLI_ASSOC);
+    }
+
     public function esUUIDValido($uuid) {
         return preg_match(
             '/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i',
             $uuid
         ) === 1;
-    }
-
-    private function XMLNode($XMLNode, $ns){
-        //
-        $nodes = array();
-        $response = array();
-        $attributes = array();
-
-        // first item ?
-        $_isfirst = array();
-
-        // each namespace
-        //  - xmlns:cfdi="http://www.sat.gob.mx/cfd/3"
-        //  - xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
-        foreach ($ns as $eachSpace) {
-            //
-            // each node
-            foreach ($XMLNode->children($eachSpace) as $_tag => $_node) {
-                if (!isset($_isfirst[$_tag]))
-                    $_isfirst[$_tag] = true;
-                //
-                $_value = $this->XMLNode($_node, $ns);
-
-                // exists $tag in $children?
-                if (key_exists($_tag, $nodes) || !$_isfirst[$_tag]) {
-                    if ($_isfirst[$_tag]) {
-                        $tmp = $nodes[$_tag];
-                        unset($nodes[$_tag]);
-                        $nodes[] = $tmp;
-                        $_isfirst[$_tag] = false;
-                    }
-                    $nodes[] = $_value;
-                } else {
-                    $nodes[$_tag] = $_value;
-                }
-            }
-        }
-
-        //
-        $atts = get_mangled_object_vars($XMLNode->attributes());
-
-        if (is_array($atts)) {
-            if (isset($atts["@attributes"]) && is_array($atts["@attributes"]))
-                $atts = $atts["@attributes"];
-
-            $attributes = array_merge(
-                $attributes,
-                $atts
-            );
-        }
-
-        // nodes ?
-        if (is_countable($nodes)) {
-            if (count($nodes)) {
-                $response = array_merge(
-                    $response,
-                    $nodes
-                );
-            }
-        }
-
-        // attributes ?
-        if (is_countable($attributes)) {
-            if (count($attributes)) {
-                $response = array_merge(
-                    $response,
-                    $attributes
-                );
-            }
-        }
-
-        return (empty($response) ? null : $response);
     }
 
     private function generarPfx($keypem, $cerpem, $pfx, $pwd){
@@ -676,11 +761,14 @@ class Facturas{
                 throw new Exception("La nueva factura fue generada pero no se pudo cancelar la anterior: ".$resultCancelar["mensaje"]);
             }
 
+            // El mensaje de la cancelación se propaga tal cual porque la anterior no siempre
+            // queda cancelada de inmediato: si el SAT la deja pendiente de aceptación, sigue
+            // relacionada con el pedido hasta que se confirme
             $respuesta = array(
                 "respuesta" => "OK",
                 "tipo"      => "mensajecargar",
                 "titulo"    => "Refacturación exitosa",
-                "mensaje"   => "Se ha generado la nueva factura y la anterior ha sido cancelada correctamente.",
+                "mensaje"   => "Se ha generado la nueva factura. ".$resultCancelar["mensaje"],
                 "formulario" => "formBusqueda"
             );
 

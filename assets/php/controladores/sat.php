@@ -3,7 +3,7 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With, enctype");
 
 include($_SERVER["DOCUMENT_ROOT"]."/assets/php/otros/sesion.php");
-include($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/SAT.php");
+include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/SAT.php");
 
 $arrayerror = array("respuesta"=>"ERROR","tipo"=>"mensaje","mensaje"=>"Acción no permitida.");
 

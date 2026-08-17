@@ -24,6 +24,9 @@ try{
         case "timbrar":
             $respuesta = $clasePagos->timbrarPago($_POST);
         break;
+        case "verificarEstatusSAT":
+            $respuesta = $clasePagos->verificarEstatusSAT($_POST);
+        break;
         default: $respuesta = $arrayerror; break;
     }
 

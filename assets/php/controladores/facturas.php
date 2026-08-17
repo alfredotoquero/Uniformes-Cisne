@@ -32,6 +32,9 @@ try{
                 $respuesta = $arrayerror;
             }
         break;
+        case "verificarEstatusSAT":
+            $respuesta = $claseFacturas->verificarEstatusSAT($_POST);
+        break;
         default: $respuesta = $arrayerror; break;
     }
     
