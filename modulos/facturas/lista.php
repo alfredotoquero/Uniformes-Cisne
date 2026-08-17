@@ -22,8 +22,11 @@ if ($facturas["respuesta"] == "OK") {
                     <th width="40">#</th>
                     <th>Cliente</th>
                     <th>Total</th>
+                    <th>Saldo</th>
                     <th>Fecha</th>
                     <th>Estado</th>
+                    <th class="text-center">Pagos</th>
+                    <th class="text-center">Nota de crédito</th>
                     <th>Pedido</th>
                     <th>Ticket</th>
                     <th style="width: 160px;"></th>
@@ -37,6 +40,7 @@ if ($facturas["respuesta"] == "OK") {
                         <td><?= $factura["serie"]." - ".$factura["folio"]; ?></td>
                         <td><?= $factura["cliente"]; ?></td>
                         <td>$<?= number_format($factura["total"],2); ?></td>
+                        <td>$<?= number_format($factura["saldo"],2); ?></td>
                         <td><?= str_replace("<br>"," ",fecha_formateada($factura["registro"])); ?></td>
                         <td>
                             <?php
@@ -46,6 +50,12 @@ if ($facturas["respuesta"] == "OK") {
                                 default: echo '<span class="badge bg-danger">CANCELADA</span>'; break;
                             }
                             ?>
+                        </td>
+                        <td class="text-center">
+                            <?= ($factura["pagos"] > 0) ? '<i class="uil uil-check text-success"></i>' : '<i class="uil uil-times text-danger"></i>'; ?>
+                        </td>
+                        <td class="text-center">
+                            <?= ($factura["notascredito"] > 0) ? '<i class="uil uil-check text-success"></i>' : '<i class="uil uil-times text-danger"></i>'; ?>
                         </td>
                         <td><?= $factura["idpedido"] ? $factura["idpedido"] : "—"; ?></td>
                         <td><?= $factura["folio_ticket"] ? $factura["folio_ticket"] : "—"; ?></td>
@@ -68,7 +78,14 @@ if ($facturas["respuesta"] == "OK") {
                                 ?>
                                     <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/refacturar.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Refacturar</a></li>
                                     <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/cancelar.php?idfactura=<?= $factura["idfactura"] ?>" class="dropdown-item">Cancelar Factura</a></li>
-                                <?
+                                    <?
+                                    // La nota de crédito solo tiene sentido mientras quede saldo por
+                                    // acreditar: una factura saldada ya no puede recibir más egresos
+                                    if ($factura["saldo"] > 0) {
+                                    ?>
+                                        <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/notacredito.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Generar Nota de Crédito</a></li>
+                                    <?
+                                    }
                                 }
                                 // La cancelación quedó pendiente de que el receptor la acepte
                                 // o la rechace ante el SAT: desde aquí se reconsulta y se
@@ -79,6 +96,7 @@ if ($facturas["respuesta"] == "OK") {
                                 <?
                                 }
                                 ?>
+                                <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/historialnotascredito.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Historial de Notas de Crédito</a></li>
                             </ul>
                         </td>
                     </tr>
