@@ -283,6 +283,9 @@ class Facturas{
         try{
             $idfactura = mysqli_real_escape_string($this->con,$post["idfactura"]);
 
+            // El join con sat_tcatusoscfdi lleva collate explícito porque el catálogo del SAT
+            // quedó en utf8mb3_general_ci y tfacturas en utf8mb3_unicode_ci: sin él MySQL
+            // aborta la consulta completa por mezcla ilegal de collations.
             $query = "
             select
                 a.idfactura,
@@ -341,7 +344,7 @@ class Facturas{
             left join
                 sat_tcatusoscfdi h
             on
-                h.usocfdi = a.usocfdi
+                h.usocfdi = a.usocfdi collate utf8mb3_unicode_ci
             left join
                 sat_tcatregimenfiscal i
             on
