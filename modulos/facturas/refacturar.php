@@ -25,6 +25,18 @@ if($facturaResp["respuesta"] != "OK"){
 $factura   = $facturaResp["factura"];
 $idcliente = (int)$factura["idcliente"];
 
+// La refacturación reemite los conceptos del pedido. Las facturas emitidas desde un ticket
+// no tienen pedido, así que aquí no hay nada que reemitir: sin este corte el formulario
+// mandaría idpedido = 0 y se timbraría un comprobante sin conceptos.
+if(empty($factura["idpedido"])){
+    ?>
+    <div style="width:500px;">
+        <div class="alert alert-warning mb-0">Esta factura no está relacionada con un pedido (por ejemplo, las emitidas desde un ticket), así que no se puede refacturar desde aquí. Cancélala y vuelve a facturar desde su origen.</div>
+    </div>
+    <?php
+    exit;
+}
+
 $razonessociales   = array();
 $correoPrecargado  = "";
 $nombreCliente     = $factura["cliente"];

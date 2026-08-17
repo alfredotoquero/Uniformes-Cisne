@@ -408,6 +408,14 @@ class Facturas{
             if($factura["respuesta"]=="OK"){
                 $factura = $factura["factura"];
 
+                // El RFC del receptor viene de tclienterazonessociales cuando la factura tiene
+                // idrazonsocial y de las columnas en texto de tfacturas cuando no (facturas de
+                // ticket o de pedido sin cliente); getFactura() ya resuelve cuál usar. Si aun
+                // así viene vacío, el SAT rechazaría la solicitud con un error incomprensible.
+                if(empty($factura["cliente_rfc"])){
+                    throw new Exception("La factura no tiene registrado el RFC del receptor, así que no se puede solicitar su cancelación ante el SAT. Contacta a soporte para completar sus datos fiscales.");
+                }
+
                 // Se obtiene la información del método de cancelación para ver si requiere UUID
                 $query = "
                 select
@@ -745,7 +753,55 @@ class Facturas{
     public function refacturarFactura($post){
         try{
             $idfacturaVieja = (int)$post["idfactura"];
-            $idpedido       = (int)$post["idpedido"];
+
+            // El pedido se resuelve aquí y no se toma del POST: refacturar reemite lo que
+            // ampara la factura, así que el origen tiene que salir de la propia relación.
+            // Las facturas emitidas desde un ticket no tienen pedido y no se pueden reemitir
+            // por esta vía: facturarPedido() no encontraría conceptos y timbraría un
+            // comprobante vacío.
+            $query = "
+            select
+                idpedidofactura,
+                idpedido
+            from
+                tpedidosfacturas
+            where
+                idfactura = '".$idfacturaVieja."'
+            order by
+                idpedidofactura
+            limit 1";
+            $relacion = mysqli_fetch_assoc(mysqli_query($this->con,$query));
+
+            if(!$relacion){
+                throw new Exception("Esta factura no está relacionada con un pedido (por ejemplo, las emitidas desde un ticket), así que no se puede refacturar desde aquí. Cancélala y vuelve a facturar desde su origen.");
+            }
+
+            $idpedido          = (int)$relacion["idpedido"];
+            $post["idpedido"]  = $idpedido;
+
+            // La factura pudo amparar solo una parte del pedido: la sustituta tiene que
+            // cubrir exactamente los mismos conceptos y cantidades. Sin esto se refacturaría
+            // el pedido completo y se duplicaría lo que ya amparan las demás parciales.
+            $query = "
+            select
+                idcotizacionproducto,
+                cantidad_facturada
+            from
+                tpedidosfacturasconceptos
+            where
+                idpedidofactura = '".(int)$relacion["idpedidofactura"]."'";
+            $result = mysqli_query($this->con,$query);
+
+            $conceptos = array();
+            while($tmp = mysqli_fetch_assoc($result)){
+                $conceptos[(int)$tmp["idcotizacionproducto"]] = $tmp["cantidad_facturada"];
+            }
+
+            // Sin conceptos registrados (facturas anteriores a la facturación parcial) se
+            // reemite el pedido completo, que es justo lo que amparaba la original.
+            if(!empty($conceptos)){
+                $post["conceptos"] = $conceptos;
+            }
 
             // Paso 1: generar la nueva factura reutilizando el proceso existente
             include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Pedidos.php");
