@@ -760,6 +760,10 @@ class Pagos{
                 throw new Exception("Este pago no se puede cancelar en su estado actual.");
             }
 
+            // Se recuperan antes de la transacción porque la reversión los borra: de aquí
+            // sale el aviso de qué se eliminó de caja, o de que no había nada que eliminar
+            $tickets = $this->getTicketsPago($idpago);
+
             mysqli_begin_transaction($this->con);
 
             $query = "
@@ -778,7 +782,7 @@ class Pagos{
                     "respuesta" => "OK",
                     "tipo" => "mensajecargar",
                     "titulo" => "Pago cancelado",
-                    "mensaje" => "El pago se ha cancelado correctamente.",
+                    "mensaje" => $this->mensajeTicketsCancelados($tickets),
                     "formulario" => "formBusqueda"
                 );
             }else{
@@ -876,7 +880,128 @@ class Pagos{
             idpago = '".$idpago."'";
         $ok = $ok && mysqli_query($this->con,$query);
 
+        $ok = $ok && $this->borrarTicketsPago($idpago);
+
         return $ok;
+    }
+
+    /**
+     * Tickets de caja que generó un pago: uno por cada pedido cobrado. Se usan para avisar en
+     * pantalla qué se va a eliminar antes de cancelar, y para armar el mensaje de resultado.
+     *
+     * @param int $idpago
+     * @return array Tickets con su corte y sucursal (vacío si el pago no tiene tickets ligados)
+     */
+    public function getTicketsPago($idpago){
+        $idpago = (int)$idpago;
+
+        $query = "
+        select
+            a.idticket,
+            a.idpedido,
+            a.folio,
+            a.total,
+            a.fecha,
+            a.idcorte,
+            b.nombre as sucursal,
+            c.status as statuscorte
+        from
+            ttickets a
+        left join
+            tsucursales b
+        on
+            b.idsucursal = a.idsucursal
+        left join
+            tcortessucursales c
+        on
+            c.idcorte = a.idcorte
+        where
+            a.idpago = '".$idpago."'
+        order by
+            a.idticket";
+
+        return mysqli_fetch_all(mysqli_query($this->con,$query),MYSQLI_ASSOC);
+    }
+
+    /**
+     * Borra el rastro del pago en caja: el ticket de cada pedido cobrado, sus formas de pago y
+     * el renglón de tticketspedidos. Al desaparecer el ticket deja de sumar en el corte y en
+     * los reportes de ventas; los cortes ya cerrados conservan los totales que se congelaron al
+     * cerrarlos (tcortessucursales.ventas y tcortesucursal_formaspago), así que solo cambian
+     * los reportes que se recalculan al vuelo desde ttickets.
+     *
+     * Los pagos anteriores a la migración que el backfill no pudo ligar no tienen tickets
+     * asociados: en ese caso no hay nada que borrar y la cancelación continúa avisándolo.
+     *
+     * @param int $idpago
+     * @return bool
+     */
+    private function borrarTicketsPago($idpago){
+        $idpago = (int)$idpago;
+
+        $query = "
+        select
+            idticket
+        from
+            ttickets
+        where
+            idpago = '".$idpago."'";
+        $tickets = mysqli_fetch_all(mysqli_query($this->con,$query),MYSQLI_ASSOC);
+
+        $ok = true;
+
+        if(!empty($tickets)){
+            $idtickets = array();
+            foreach($tickets as $ticket){
+                $idtickets[] = (int)$ticket["idticket"];
+            }
+
+            $query = "
+            delete
+            from
+                tformaspagoticket
+            where
+                idticket in (".implode(",",$idtickets).")";
+            $ok = $ok && mysqli_query($this->con,$query);
+
+            $query = "
+            delete
+            from
+                ttickets
+            where
+                idpago = '".$idpago."'";
+            $ok = $ok && mysqli_query($this->con,$query);
+        }
+
+        $query = "
+        delete
+        from
+            tticketspedidos
+        where
+            idpago = '".$idpago."'";
+        $ok = $ok && mysqli_query($this->con,$query);
+
+        return $ok;
+    }
+
+    /**
+     * Mensaje de resultado de la cancelación. Cuando no había tickets ligados se avisa
+     * explícitamente para que nadie asuma que la caja quedó ajustada.
+     *
+     * @param array $tickets Tickets recuperados con getTicketsPago() antes de la reversión
+     * @return string
+     */
+    private function mensajeTicketsCancelados($tickets){
+        if(empty($tickets)){
+            return "El pago se ha cancelado correctamente. No se encontró el ticket de caja asociado; verifícalo manualmente.";
+        }
+
+        $folios = array();
+        foreach($tickets as $ticket){
+            $folios[] = "#".$ticket["folio"];
+        }
+
+        return "El pago se ha cancelado correctamente. Se eliminó de caja ".((count($folios) == 1) ? "el ticket " : "los tickets ").implode(", ",$folios).".";
     }
 
     /**

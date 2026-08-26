@@ -75,7 +75,7 @@ if ($pagos["respuesta"] == "OK") {
                                 <?
                                 }else if (($pago["status"] == 1 && empty($pago["uuid"])) || $pago["status"] == 4) {
                                 ?>
-                                    <li><a href="javascript:;" onclick="solicitudServidor('pagos','cancelar','idpago=<?= $pago['idpago'] ?>','¿Deseas cancelar este pago?');" class="dropdown-item text-danger">Cancelar pago</a></li>
+                                    <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/pagos/cancelarpago.php?idpago=<?= $pago['idpago'] ?>" class="dropdown-item text-danger">Cancelar pago</a></li>
                                 <?
                                 }
 
