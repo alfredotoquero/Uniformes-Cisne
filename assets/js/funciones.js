@@ -2122,7 +2122,12 @@ function esContactoNuevo(idcontacto) {
 	return correcto;
 }
 
-function mostrar2(value) {
+// reiniciar: al cambiar de origen se limpian los campos del origen contrario, para que una
+// partida libre no arrastre el producto de inventario que quedo seleccionado (y viceversa).
+// Se manda false al precargar una partida existente para no borrar los datos recien cargados.
+function mostrar2(value, reiniciar) {
+	reiniciar = reiniciar !== false;
+
 	if (value == 2) {
 		$("#textProducto").show();
 		$("#selectProducto").hide();
@@ -2130,6 +2135,11 @@ function mostrar2(value) {
 		$("#slcCategoria").prop("disabled", false);
 		// Reducir tamaño del precio unitario para que el botón no salte de línea
 		$("#divPrecio").removeClass("col-md-2").addClass("col-md-1");
+
+		if (reiniciar) {
+			$("#slcProducto").val(0).trigger("change");
+			$("#idproducto").val("");
+		}
 	} else {
 		$("#selectProducto").show();
 		$("#textProducto").hide();
@@ -2137,7 +2147,21 @@ function mostrar2(value) {
 		$("#slcCategoria").prop("disabled", true);
 		// Restaurar tamaño original del precio unitario
 		$("#divPrecio").removeClass("col-md-1").addClass("col-md-2");
+
+		if (reiniciar) {
+			$("#txtProducto").val("");
+			$("#slcTipoProducto").val("0").trigger("change");
+		}
 	}
+}
+
+// El select de tipo de producto no existe en todas las pantallas y puede quedarse sin
+// seleccion cuando la partida trae un tipo que ya no esta en el catalogo. En ambos casos
+// .val() regresa undefined/null, que con == no se compara igual a 0 y dejaba pasar la
+// validacion mandando "undefined"/"null" al servidor.
+function idTipoProductoSeleccionado() {
+	var idtipoproducto = $("#slcTipoProducto").val();
+	return Number(idtipoproducto) > 0 ? String(idtipoproducto) : "0";
 }
 
 function agregarProductoCotizacion() {
@@ -2159,7 +2183,7 @@ function agregarProductoCotizacion() {
 			"error",
 			"slcCategoria"
 		);
-	} else if ($("#slcOrigen").val() == 2 && $("#slcTipoProducto").val() == 0) {
+	} else if ($("#slcOrigen").val() == 2 && idTipoProductoSeleccionado() == 0) {
 		swalFocus(
 			"ATENCION",
 			"Debes indicar un Tipo de Producto.",
@@ -2192,7 +2216,7 @@ function agregarProductoCotizacion() {
 						"&idcategoriaproducto=" +
 						$("#slcCategoria").val() +
 						"&idtipoproducto=" +
-						$("#slcTipoProducto").val() +
+						idTipoProductoSeleccionado() +
 						"&cantidad=" +
 						$("#txtCantidad").val() +
 						"&precio=" +
@@ -2225,7 +2249,7 @@ function editarProductoCotizacion() {
 			"error",
 			"slcCategoria"
 		);
-	} else if ($("#slcOrigen").val() == 2 && $("#slcTipoProducto").val() == 0) {
+	} else if ($("#slcOrigen").val() == 2 && idTipoProductoSeleccionado() == 0) {
 		swalFocus(
 			"ATENCION",
 			"Debes indicar un Tipo de Producto.",
@@ -2258,7 +2282,7 @@ function editarProductoCotizacion() {
 					"&idcategoriaproducto=" +
 					$("#slcCategoria").val() +
 					"&idtipoproducto=" +
-					($("#slcTipoProducto").val() ?? "0") +
+					idTipoProductoSeleccionado() +
 					"&cantidad=" +
 					$("#txtCantidad").val() +
 					"&precio=" +
@@ -2303,6 +2327,31 @@ function editarProductoCotizacion() {
 	}
 }
 
+// Si el tipo de producto de la partida ya no aparece en el catalogo (por ejemplo porque
+// se dio de baja), el select se quedaria sin seleccion y la partida perderia su tipo al
+// guardarla. Se agrega la opcion al vuelo para conservar el valor original.
+function seleccionarTipoProducto(idtipoproducto) {
+	var select = $("#slcTipoProducto");
+
+	if (!select.length) {
+		return;
+	}
+
+	idtipoproducto = Number(idtipoproducto) > 0 ? String(idtipoproducto) : "0";
+	select.val(idtipoproducto);
+
+	if (select.val() == null && idtipoproducto != "0") {
+		select.append(
+			$("<option>", { value: idtipoproducto, text: "Tipo #" + idtipoproducto })
+		);
+		select.val(idtipoproducto);
+	}
+
+	if (select.val() == null) {
+		select.val("0");
+	}
+}
+
 function cargarDatosProducto(idpartida) {
 	$.ajax({
 		type: "POST",
@@ -2322,12 +2371,13 @@ function cargarDatosProducto(idpartida) {
 			$("#txtProducto").val(data.producto);
 			$("#txtPrecio").val(data.precio);
 			$("#slcCategoria").val(data.idcategoriaproducto);
-			$("#slcTipoProducto").val(data.idtipoproducto ?? "0");
+			seleccionarTipoProducto(data.idtipoproducto);
 
 			$("#slcProducto").select2();
 			$("#slcProducto").val(data.idproducto);
 			$("#slcTipoProducto").select2();
-			mostrar2($("#slcOrigen").val());
+			$("#slcTipoProducto").trigger("change");
+			mostrar2($("#slcOrigen").val(), false);
 			$("#txtCantidad").focus();
 
 			// ocultar boton agregar y mostrar boton editar
