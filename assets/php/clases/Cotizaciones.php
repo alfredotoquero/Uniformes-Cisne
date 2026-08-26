@@ -1467,6 +1467,60 @@ class Cotizaciones
     }
 
     /**
+     * Resolver Tipo de Producto de una partida.
+     * 
+     * Si la partida viene del inventario (idproducto > 0) el tipo se toma del catalogo,
+     * porque la pantalla mantiene oculto el select de tipo en ese origen. Para las
+     * partidas libres se limpia el valor recibido (puede llegar "undefined" o "null"
+     * desde el javascript) y se conserva solo si es un tipo de producto existente.
+     * 
+     * @access private
+     * @param int $idproducto
+     * @param mixed $idtipoproducto
+     * @return string
+     */
+    private function resolverIdTipoProducto($idproducto, $idtipoproducto)
+    {
+        $idproducto = (int) $idproducto;
+
+        if ($idproducto > 0) {
+            $query = "
+            select
+                idtipoproducto
+            from
+                tproductos
+            where
+                idproducto = '" . $idproducto . "'
+            ";
+
+            $producto = mysqli_fetch_assoc(mysqli_query($this->con, $query));
+
+            if ($producto && $producto["idtipoproducto"] > 0) {
+                return $producto["idtipoproducto"];
+            }
+        }
+
+        $idtipoproducto = is_numeric($idtipoproducto) ? (int) $idtipoproducto : 0;
+
+        if ($idtipoproducto > 0) {
+            $query = "
+            select
+                idtipoproducto
+            from
+                ttiposproducto
+            where
+                idtipoproducto = '" . $idtipoproducto . "'
+            ";
+
+            if (!mysqli_num_rows(mysqli_query($this->con, $query))) {
+                $idtipoproducto = 0;
+            }
+        }
+
+        return (string) $idtipoproducto;
+    }
+
+    /**
      * Agregar Partida Temporal.
      * 
      * @access public
@@ -1480,7 +1534,7 @@ class Cotizaciones
         $idproducto = mysqli_real_escape_string($this->con, $post["idproducto"]);
         $producto = mysqli_real_escape_string($this->con, $post["producto"]);
         $idcategoriaproducto = mysqli_real_escape_string($this->con, $post["idcategoriaproducto"]);
-        $idtipoproducto = mysqli_real_escape_string($this->con, $post["idtipoproducto"] ?? "0");
+        $idtipoproducto = mysqli_real_escape_string($this->con, $this->resolverIdTipoProducto($idproducto, $post["idtipoproducto"] ?? "0"));
         $cantidad = mysqli_real_escape_string($this->con, $post["cantidad"]);
         $precio = mysqli_real_escape_string($this->con, $post["precio"]);
 
@@ -1592,7 +1646,7 @@ class Cotizaciones
         $idproducto = mysqli_real_escape_string($this->con, $post["idproducto"]);
         $producto = mysqli_real_escape_string($this->con, $post["producto"]);
         $idcategoriaproducto = mysqli_real_escape_string($this->con, $post["idcategoriaproducto"]);
-        $idtipoproducto = mysqli_real_escape_string($this->con, $post["idtipoproducto"] ?? "0");
+        $idtipoproducto = mysqli_real_escape_string($this->con, $this->resolverIdTipoProducto($idproducto, $post["idtipoproducto"] ?? "0"));
         $cantidad = mysqli_real_escape_string($this->con, $post["cantidad"]);
         $precio = mysqli_real_escape_string($this->con, $post["precio"]);
         $serigrafia1 = mysqli_real_escape_string($this->con, $post["txtSerigrafia1"]);
@@ -1681,6 +1735,7 @@ class Cotizaciones
                     idproducto,
                     producto,
                     idcategoriaproducto,
+                    idtipoproducto,
                     cantidad,
                     precio,
                     serigrafia1,
@@ -1706,6 +1761,7 @@ class Cotizaciones
                 idproducto,
                 producto,
                 idcategoriaproducto,
+                idtipoproducto,
                 cantidad,
                 precio,
                 serigrafia1,
