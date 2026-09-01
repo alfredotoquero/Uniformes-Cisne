@@ -23,6 +23,11 @@
  *                                                     trabaja sobre ese periodo en lugar
  *                                                     del mes anterior (para reprocesos)
  *   php cronjobs/facturaGlobal.php --emisor=RFC       usa otro emisor
+ *   php cronjobs/facturaGlobal.php --tasa=16          tasa de IVA (default 8)
+ *   php cronjobs/facturaGlobal.php --idusuario=N      usuario al que quedan acreditadas las
+ *                                                     facturas (default IDUSUARIO_FACTURAS).
+ *                                                     tfacturas.idusuario es llave foránea a
+ *                                                     tusuarios, así que tiene que existir
  *   php cronjobs/facturaGlobal.php --detalle          lista documento por documento lo que
  *                                                     entraría (útil en simulación)
  *
@@ -62,6 +67,14 @@ $aplicar = in_array("--aplicar", $argv);
 $detalle = in_array("--detalle", $argv);
 $rfcemisor = argumento($argv,"emisor","GGU100112BE6");
 
+// La factura queda acreditada a un usuario real: tfacturas.idusuario tiene llave foránea a
+// tusuarios y no existe un "usuario sistema" al que colgarla. El cronjob corre desatendido,
+// así que se fija aquí en lugar de pedirse en cada corrida.
+define("IDUSUARIO_FACTURAS", 1);
+
+$idusuario = argumento($argv,"idusuario",IDUSUARIO_FACTURAS);
+$tasa = argumento($argv,"tasa",FacturasGlobales::TASA_IVA);
+
 // Por default el mes anterior: el cronjob corre a principios de mes sobre el periodo que
 // acaba de cerrar.
 $mes = argumento($argv,"mes",date("n",strtotime("first day of last month")));
@@ -90,14 +103,16 @@ if(empty($emisor)){
 $periodo = $claseFacturasGlobales->periodo($mes,$anio);
 $formaspago = $claseFacturasGlobales->formasPago();
 
-registrar($rutalog, "=== Factura global ".$periodo["mes"]."/".$periodo["anio"]." - ".$emisor["rfc"]." (".($aplicar ? "timbrando" : "simulación").")");
+registrar($rutalog, "=== Factura global ".$periodo["mes"]."/".$periodo["anio"]." - ".$emisor["rfc"]." al ".$tasa."% de IVA (".($aplicar ? "timbrando" : "simulación").")");
 
 foreach($formaspago as $formapago){
     $idformapago = $formapago["idformapago"];
 
     $resultado = $claseFacturasGlobales->generar(array(
         "idemisor" => $emisor["idemisor"],
+        "idusuario" => $idusuario,
         "idformapago" => $idformapago,
+        "tasaiva" => $tasa,
         "mes" => $mes,
         "anio" => $anio,
         "simular" => !$aplicar

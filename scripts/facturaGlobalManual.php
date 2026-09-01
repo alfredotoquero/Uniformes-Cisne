@@ -9,9 +9,9 @@
  * el cronjob (mismo receptor genérico, mismo concepto consolidado, mismo nodo
  * InformacionGlobal), pero el importe lo pones tú.
  *
- * El total que se captura es el TOTAL CON IVA, o sea lo que efectivamente se cobró. El
- * subtotal se obtiene dividiéndolo entre 1.16, igual que las globales que se venían
- * emitiendo a mano.
+ * El total que se captura es el TOTAL CON IVA, o sea lo que efectivamente se cobró; el
+ * subtotal se obtiene dividiéndolo entre 1 + la tasa. La tasa default es 8% (región
+ * fronteriza) y se cambia con --tasa: las globales de julio se emitieron al 16%.
  *
  * Por default timbra contra el ambiente de PRUEBAS del PAC: el CFDI que regresa no tiene
  * validez fiscal, no se guarda en la base, no gasta folio y sus archivos van a
@@ -28,8 +28,13 @@
  * Opciones:
  *   --formapago=tarjeta|transferencia   forma de pago que consolida la factura
  *   --total=3525.00                     total con IVA incluido
+ *   --tasa=8                            tasa de IVA (default 8)
  *   --mes=8 --anio=2026                 periodo que declara el nodo InformacionGlobal
  *   --emisor=RFC                        emisor (default GGU100112BE6)
+ *   --idusuario=N                       usuario al que queda acreditada la factura.
+ *                                       tfacturas.idusuario es llave foránea a tusuarios,
+ *                                       así que tiene que ser uno que exista y esté activo.
+ *                                       Sin este dato el script lista los disponibles
  *   --serie=GA --folio=3                fuerza el consecutivo en lugar de tomarlo de
  *                                       temisores; con --folio el consecutivo del emisor
  *                                       NO se incrementa
@@ -67,9 +72,11 @@ $real = in_array("--real", $argv);
 $marcar = in_array("--marcar", $argv);
 $rfcemisor = argumento($argv,"emisor","GGU100112BE6");
 $serie = argumento($argv,"serie");
+$idusuario = argumento($argv,"idusuario");
 $folio = argumento($argv,"folio");
 $formapago = strtolower(argumento($argv,"formapago",""));
 $total = argumento($argv,"total");
+$tasa = argumento($argv,"tasa",FacturasGlobales::TASA_IVA);
 $mes = argumento($argv,"mes",date("n",strtotime("first day of last month")));
 $anio = argumento($argv,"anio",date("Y",strtotime("first day of last month")));
 
@@ -111,16 +118,29 @@ if(empty($emisor)){
     exit("No existe el emisor ".$rfcemisor."\n");
 }
 
+// La factura queda acreditada a un usuario real porque tfacturas.idusuario tiene llave
+// foránea a tusuarios. Se valida aquí, antes de timbrar: si se descubriera después, el
+// CFDI ya existiría ante el SAT y habría que cancelarlo.
+if(empty($idusuario)){
+    echo "Falta --idusuario. La factura tiene que quedar a nombre de un usuario activo:\n\n";
+
+    foreach($claseFacturasGlobales->usuariosActivos() as $u){
+        echo "  --idusuario=".$u["idusuario"]."\t".$u["usuario"]."\t".$u["nombre"]."\n";
+    }
+
+    exit("\n");
+}
+
 // Se muestra el desglose antes de mandar nada. Si el total se capturó como subtotal por
 // error, aquí se ve de inmediato: el total de la factura no coincidiría con lo cobrado.
-$desglose = $claseFacturasGlobales->desglose($total);
+$desglose = $claseFacturasGlobales->desglose($total,$tasa);
 
 echo "\n";
 echo "Emisor:      ".$emisor["rfc"]." - ".$emisor["razon_social"]."\n";
 echo "Periodo:     ".sprintf("%02d",$mes)."/".$anio." (mensual)\n";
 echo "Forma pago:  ".$formapago."\n";
 echo "Subtotal:    $".number_format($desglose["subtotal_cfdi"],2)."\n";
-echo "IVA ".FacturasGlobales::TASA_IVA."%:     $".number_format($desglose["iva"],2)."\n";
+echo "IVA ".$desglose["tasaiva"]."%:      $".number_format($desglose["iva"],2)."\n";
 echo "Total:       $".number_format($desglose["total"],2)." (capturado $".number_format($total,2).")\n";
 echo "Modo:        ".($real ? "REAL - se registra y gasta folio" : "PRUEBAS - no se guarda nada")."\n";
 echo "\n";
@@ -134,10 +154,12 @@ if(abs($desglose["total"] - $total) > 0.001){
 
 $resultado = $claseFacturasGlobales->generarManual(array(
     "idemisor" => $emisor["idemisor"],
+    "idusuario" => $idusuario,
     "idformapago" => $idformapago,
     "mes" => $mes,
     "anio" => $anio,
     "total" => $total,
+    "tasaiva" => $tasa,
     "pruebas" => !$real,
     "marcar" => ($real && $marcar),
     "serie" => $serie,

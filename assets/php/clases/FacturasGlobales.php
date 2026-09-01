@@ -17,9 +17,11 @@
  * SAT tiene que ver el dinero de tarjeta separado del de transferencia. Cada una es un
  * consolidado: un único concepto con el total del periodo, no un renglón por ticket.
  *
- * Todo se timbra a la tasa de IVA definida en TASA_IVA (16%), que es la que traen las
- * globales que se venían emitiendo a mano. El dinero cobrado ya trae el IVA dentro (es lo
- * que el cliente pagó), así que el subtotal es el cobrado entre 1 + la tasa.
+ * La tasa de IVA default es TASA_IVA (8%, región fronteriza), y se puede cambiar por
+ * factura: la tienda maneja las dos tasas (el POS timbra al 8% y los pedidos se capturan al
+ * 8% o al 16%), y las globales que se emitieron a mano en julio fueron al 16%. El dinero
+ * cobrado ya trae el IVA dentro (es lo que pagó el cliente), así que el subtotal es el
+ * cobrado entre 1 + la tasa.
  */
 class FacturasGlobales{
 
@@ -34,7 +36,9 @@ class FacturasGlobales{
     const FORMAPAGO_TARJETA = 3;
     const FORMAPAGO_TRANSFERENCIA = 5;
 
-    const TASA_IVA = 16;
+    // Tasa default. Se puede cambiar por factura con "tasaiva" en generar()/generarManual()
+    // o con --tasa desde la línea de comandos.
+    const TASA_IVA = 8;
 
     // Mensual. El SAT admite diaria (01), semanal (02), quincenal (03) y mensual (04).
     const PERIODICIDAD_MENSUAL = "04";
@@ -53,9 +57,9 @@ class FacturasGlobales{
     const DESCRIPCION_CONCEPTO = "UNIFORMES";
     const OBJETO_IMPUESTO = "02";
 
-    // La global no la emite una persona, la emite el cronjob. tfacturas.idusuario no se
-    // usa para nada más que rastrear quién facturó, así que 0 marca "el sistema".
-    const IDUSUARIO_SISTEMA = 0;
+    // tfacturas.idusuario tiene llave foránea a tusuarios, así que la global tiene que
+    // quedar a nombre de un usuario que exista: no hay un "usuario sistema" al que
+    // colgarla. Se resuelve con resolverUsuario() y se valida ANTES de timbrar.
 
     const API_KEY_TIMBRADOR = "tek_npzimyh2ajjxpj3p3j2ofozt7c6deej9uu";
     const URL_TIMBRADOR = "https://api.xptk.app/timbrador/index.php";
@@ -143,6 +147,62 @@ class FacturasGlobales{
     }
 
     /**
+     * Valida el usuario al que se le va a acreditar la factura.
+     *
+     * tfacturas.idusuario tiene llave foránea a tusuarios: si no existe, el INSERT truena
+     * DESPUÉS de haber timbrado y el CFDI queda vivo ante el SAT pero fuera del sistema.
+     * Por eso esto se llama antes de mandar nada al timbrador.
+     *
+     * @access public
+     * @param int $idusuario
+     * @return array Datos del usuario
+     */
+    public function resolverUsuario($idusuario){
+        $idusuario = mysqli_real_escape_string($this->con,$idusuario);
+
+        $query = "
+        select
+            idusuario,
+            usuario,
+            nombre
+        from
+            tusuarios
+        where
+            idusuario = '".$idusuario."' and
+            status = 'A'";
+        $usuario = mysqli_fetch_assoc(mysqli_query($this->con,$query));
+
+        if(empty($usuario)){
+            throw new Exception("El usuario ".$idusuario." no existe o está inactivo; la factura tiene que quedar a nombre de un usuario válido (tfacturas.idusuario es llave foránea a tusuarios)");
+        }
+
+        return $usuario;
+    }
+
+    /**
+     * Usuarios activos, para poder elegir a cuál acreditar la factura desde la línea de
+     * comandos.
+     *
+     * @access public
+     * @return array
+     */
+    public function usuariosActivos(){
+        $query = "
+        select
+            idusuario,
+            usuario,
+            nombre
+        from
+            tusuarios
+        where
+            status = 'A'
+        order by
+            idusuario";
+
+        return mysqli_fetch_all(mysqli_query($this->con,$query),MYSQLI_ASSOC);
+    }
+
+    /**
      * Desglosa un total cobrado (IVA incluido) como lo hace el CFDI.
      *
      * El subtotal se lleva a SEIS decimales, no a dos, y así viaja en el concepto. Es la
@@ -155,17 +215,20 @@ class FacturasGlobales{
      * Reproduce los importes de GA-1 y GA-2, las globales que se timbraron a mano.
      *
      * @access public
-     * @param float $total   Total cobrado, con IVA incluido
+     * @param float $total     Total cobrado, con IVA incluido
+     * @param float $tasaiva   Tasa a aplicar; por default TASA_IVA
      * @return array subtotal (6 decimales, el que se manda), y el subtotal, iva y total
      *               que quedarán en el comprobante
      */
-    public function desglose($total){
+    public function desglose($total, $tasaiva = null){
         $total = (float)$total;
-        $subtotal = round($total / (1 + (self::TASA_IVA / 100)),6);
+        $tasaiva = ($tasaiva === null) ? self::TASA_IVA : (float)$tasaiva;
+        $subtotal = round($total / (1 + ($tasaiva / 100)),6);
         $subtotal_cfdi = round($subtotal,2);
-        $iva = round($subtotal * (self::TASA_IVA / 100),2);
+        $iva = round($subtotal * ($tasaiva / 100),2);
 
         return array(
+            "tasaiva" => $tasaiva,
             "subtotal" => $subtotal,
             "subtotal_cfdi" => $subtotal_cfdi,
             "iva" => $iva,
@@ -491,6 +554,7 @@ class FacturasGlobales{
             $idemisor = mysqli_real_escape_string($this->con,$post["idemisor"]);
             $idformapago = mysqli_real_escape_string($this->con,$post["idformapago"]);
             $simular = !empty($post["simular"]);
+            $tasaiva = isset($post["tasaiva"]) ? (float)$post["tasaiva"] : self::TASA_IVA;
             $periodo = $this->periodo($post["mes"],$post["anio"]);
 
             $query = "
@@ -547,6 +611,11 @@ class FacturasGlobales{
                 throw new Exception("El periodo ".$periodo["mes"]."/".$periodo["anio"]." ya está declarado en la factura ".$existente["serie"]."-".$existente["folio"]." (".$existente["uuid"].")");
             }
 
+            // Se resuelve antes de cualquier cosa: tfacturas.idusuario tiene llave foránea
+            // a tusuarios, y descubrirlo después de timbrar dejaría un CFDI vivo ante el SAT
+            // sin registrar en el sistema.
+            $usuario = $this->resolverUsuario($post["idusuario"]);
+
             $cobros = $this->cobros($idformapago,$periodo);
 
             // Los dos casos que no timbran salen por aquí asignando la respuesta y no con un
@@ -567,7 +636,8 @@ class FacturasGlobales{
                     "timbrada" => false,
                     "mensaje" => "Simulación: no se timbró nada",
                     "cobros" => $cobros,
-                    "subtotal" => $this->desglose($cobros["total"])["subtotal_cfdi"],
+                    "tasaiva" => $tasaiva,
+                    "subtotal" => $this->desglose($cobros["total"],$tasaiva)["subtotal_cfdi"],
                     "serie" => $emisor["serie_global"],
                     "folio" => $emisor["folio_global"]
                 );
@@ -593,7 +663,7 @@ class FacturasGlobales{
                     '".self::PERIODICIDAD_MENSUAL."',
                     '".$periodo["mes"]."',
                     '".$periodo["anio"]."',
-                    '".self::TASA_IVA."'
+                    '".$tasaiva."'
                 )";
 
                 if(!mysqli_query($this->con,$query)){
@@ -633,11 +703,7 @@ class FacturasGlobales{
                     throw new Exception("No quedó ningún cobro marcado para la factura global");
                 }
 
-                $subtotal = $this->desglose($marcado["total"])["subtotal"];
-
-                $respuestaTimbrado = $this->timbrar($emisor,$idformapago,$periodo,$subtotal);
-
-                $ruta = $_SERVER["DOCUMENT_ROOT"]."/emisores/".str_replace("&","_",$emisor["rfc"]);
+                $subtotal = $this->desglose($marcado["total"],$tasaiva)["subtotal"];
 
                 $query = "
                 select
@@ -648,6 +714,10 @@ class FacturasGlobales{
                     metodopago = 'PUE'";
                 $idmetodopago = mysqli_fetch_assoc(mysqli_query($this->con,$query))["idmetodopago"];
 
+                if(empty($idmetodopago)){
+                    throw new Exception("No se encontró el método de pago PUE en el catálogo del SAT");
+                }
+
                 $query = "
                 select
                     idformapago_sat
@@ -656,6 +726,23 @@ class FacturasGlobales{
                 where
                     idformapago = '".$idformapago."'";
                 $idformapago_sat = mysqli_fetch_assoc(mysqli_query($this->con,$query))["idformapago_sat"];
+
+                if(empty($idformapago_sat)){
+                    throw new Exception("La forma de pago ".$idformapago." no tiene equivalencia en el catálogo del SAT (tcatformaspago.idformapago_sat)");
+                }
+
+                // Timbrar es el punto de no retorno: de aquí en adelante el CFDI ya existe
+                // ante el SAT y cualquier fallo obliga a cancelarlo, así que todo lo que
+                // podía fallar por datos ya se validó.
+                $respuestaTimbrado = $this->timbrar($emisor,$idformapago,$periodo,$subtotal,false,$tasaiva);
+
+                $ruta = $_SERVER["DOCUMENT_ROOT"]."/emisores/".str_replace("&","_",$emisor["rfc"]);
+
+                // Los archivos se guardan apenas llega la respuesta: si el registro fallara,
+                // el CFDI ya es real y hay que conservarlo para poder cancelarlo o darlo de
+                // alta a mano.
+                file_put_contents($ruta."/facturas/".$respuestaTimbrado["uuid"].".xml",base64_decode($respuestaTimbrado["xml"]));
+                file_put_contents($ruta."/facturas/".$respuestaTimbrado["uuid"].".pdf",base64_decode($respuestaTimbrado["pdf"]));
 
                 $iva = round($respuestaTimbrado["total"] - $respuestaTimbrado["subtotal"],2);
 
@@ -682,7 +769,7 @@ class FacturasGlobales{
                     uuid,
                     timbrado
                 ) values (
-                    '".self::IDUSUARIO_SISTEMA."',
+                    '".$usuario["idusuario"]."',
                     '".$idemisor."',
                     '".self::NOMBRE_PUBLICO_GENERAL."',
                     '".self::RFC_PUBLICO_GENERAL."',
@@ -739,12 +826,6 @@ class FacturasGlobales{
 
                 mysqli_commit($this->con);
                 $entransaccion = false;
-
-                // Los archivos se escriben después del commit: si el disco falla, el CFDI ya
-                // existe ante el SAT y perderlo de la base sería peor que no tener el PDF, que
-                // siempre se puede recuperar del timbrador.
-                file_put_contents($ruta."/facturas/".$respuestaTimbrado["uuid"].".xml",base64_decode($respuestaTimbrado["xml"]));
-                file_put_contents($ruta."/facturas/".$respuestaTimbrado["uuid"].".pdf",base64_decode($respuestaTimbrado["pdf"]));
 
                 $respuesta = array(
                     "respuesta" => "OK",
@@ -821,6 +902,7 @@ class FacturasGlobales{
             $pruebas = !empty($post["pruebas"]);
             $marcar = !empty($post["marcar"]);
             $total = round((float)$post["total"],2);
+            $tasaiva = isset($post["tasaiva"]) ? (float)$post["tasaiva"] : self::TASA_IVA;
             $periodo = $this->periodo($post["mes"],$post["anio"]);
 
             if($total <= 0){
@@ -864,31 +946,67 @@ class FacturasGlobales{
                 throw new Exception("El emisor ".$emisor["rfc"]." no tiene configurada la serie y el folio de facturas globales; indícalos con --serie y --folio");
             }
 
+            // Todo lo que se necesita de la base se resuelve AQUÍ, antes de timbrar. Un
+            // dato que falte después del timbrado deja un CFDI vivo ante el SAT que el
+            // sistema no registró, y eso solo se arregla cancelándolo a mano.
+            $usuario = $this->resolverUsuario($post["idusuario"]);
+
+            $query = "
+            select
+                idmetodopago
+            from
+                sat_tcatmetodospago
+            where
+                metodopago = 'PUE'";
+            $idmetodopago = mysqli_fetch_assoc(mysqli_query($this->con,$query))["idmetodopago"];
+
+            if(empty($idmetodopago)){
+                throw new Exception("No se encontró el método de pago PUE en el catálogo del SAT");
+            }
+
+            $query = "
+            select
+                idformapago_sat
+            from
+                tcatformaspago
+            where
+                idformapago = '".$idformapago."'";
+            $idformapago_sat = mysqli_fetch_assoc(mysqli_query($this->con,$query))["idformapago_sat"];
+
+            if(empty($idformapago_sat)){
+                throw new Exception("La forma de pago ".$idformapago." no tiene equivalencia en el catálogo del SAT (tcatformaspago.idformapago_sat)");
+            }
+
             // El total capturado ya trae el IVA dentro, igual que el dinero que cobra la
             // tienda. desglose() reparte subtotal e IVA de modo que el total del CFDI caiga
             // exacto en la cifra capturada.
-            $subtotal = $this->desglose($total)["subtotal"];
+            $subtotal = $this->desglose($total,$tasaiva)["subtotal"];
 
-            $respuestaTimbrado = $this->timbrar($emisor,$idformapago,$periodo,$subtotal,$pruebas);
+            $respuestaTimbrado = $this->timbrar($emisor,$idformapago,$periodo,$subtotal,$pruebas,$tasaiva);
 
             $iva = round($respuestaTimbrado["total"] - $respuestaTimbrado["subtotal"],2);
+
+            // Los archivos se escriben apenas llega la respuesta, antes de tocar la base: si
+            // el registro fallara, el CFDI ya existe ante el SAT y hay que conservarlo.
+            $rutaarchivos = $pruebas
+                ? $_SERVER["DOCUMENT_ROOT"]."/txts/pruebas"
+                : $_SERVER["DOCUMENT_ROOT"]."/emisores/".str_replace("&","_",$emisor["rfc"])."/facturas";
+
+            if(!is_dir($rutaarchivos)){
+                mkdir($rutaarchivos,0775,true);
+            }
+
+            file_put_contents($rutaarchivos."/".$respuestaTimbrado["uuid"].".xml",base64_decode($respuestaTimbrado["xml"]));
+            file_put_contents($rutaarchivos."/".$respuestaTimbrado["uuid"].".pdf",base64_decode($respuestaTimbrado["pdf"]));
 
             // El CFDI de pruebas no vale fiscalmente: no se registra, no gasta folio y sus
             // archivos van aparte para que nadie los confunda con los buenos.
             if($pruebas){
-                $ruta = $_SERVER["DOCUMENT_ROOT"]."/txts/pruebas";
-
-                if(!is_dir($ruta)){
-                    mkdir($ruta,0775,true);
-                }
-
-                file_put_contents($ruta."/".$respuestaTimbrado["uuid"].".xml",base64_decode($respuestaTimbrado["xml"]));
-                file_put_contents($ruta."/".$respuestaTimbrado["uuid"].".pdf",base64_decode($respuestaTimbrado["pdf"]));
-
                 $respuesta = array(
                     "respuesta" => "OK",
                     "timbrada" => true,
                     "pruebas" => true,
+                    "tasaiva" => $tasaiva,
                     "serie" => $emisor["serie_global"],
                     "folio" => $emisor["folio_global"],
                     "uuid" => $respuestaTimbrado["uuid"],
@@ -896,30 +1014,12 @@ class FacturasGlobales{
                     "subtotal" => $respuestaTimbrado["subtotal"],
                     "iva" => $iva,
                     "total" => $respuestaTimbrado["total"],
-                    "archivos" => $ruta."/".$respuestaTimbrado["uuid"]
+                    "archivos" => $rutaarchivos."/".$respuestaTimbrado["uuid"]
                 );
             }else{
 
                 mysqli_begin_transaction($this->con);
                 $entransaccion = true;
-
-                $query = "
-                select
-                    idmetodopago
-                from
-                    sat_tcatmetodospago
-                where
-                    metodopago = 'PUE'";
-                $idmetodopago = mysqli_fetch_assoc(mysqli_query($this->con,$query))["idmetodopago"];
-
-                $query = "
-                select
-                    idformapago_sat
-                from
-                    tcatformaspago
-                where
-                    idformapago = '".$idformapago."'";
-                $idformapago_sat = mysqli_fetch_assoc(mysqli_query($this->con,$query))["idformapago_sat"];
 
                 $query = "
                 insert
@@ -944,7 +1044,7 @@ class FacturasGlobales{
                     uuid,
                     timbrado
                 ) values (
-                    '".self::IDUSUARIO_SISTEMA."',
+                    '".$usuario["idusuario"]."',
                     '".$idemisor."',
                     '".self::NOMBRE_PUBLICO_GENERAL."',
                     '".self::RFC_PUBLICO_GENERAL."',
@@ -992,7 +1092,7 @@ class FacturasGlobales{
                     '".self::PERIODICIDAD_MENSUAL."',
                     '".$periodo["mes"]."',
                     '".$periodo["anio"]."',
-                    '".self::TASA_IVA."',
+                    '".$tasaiva."',
                     '".$total."',
                     '".$respuestaTimbrado["subtotal"]."',
                     '".$iva."',
@@ -1064,14 +1164,11 @@ class FacturasGlobales{
                 mysqli_commit($this->con);
                 $entransaccion = false;
 
-                $ruta = $_SERVER["DOCUMENT_ROOT"]."/emisores/".str_replace("&","_",$emisor["rfc"]);
-                file_put_contents($ruta."/facturas/".$respuestaTimbrado["uuid"].".xml",base64_decode($respuestaTimbrado["xml"]));
-                file_put_contents($ruta."/facturas/".$respuestaTimbrado["uuid"].".pdf",base64_decode($respuestaTimbrado["pdf"]));
-
                 $respuesta = array(
                     "respuesta" => "OK",
                     "timbrada" => true,
                     "pruebas" => false,
+                    "tasaiva" => $tasaiva,
                     "idfacturaglobal" => $idfacturaglobal,
                     "idfactura" => $idfactura,
                     "serie" => $emisor["serie_global"],
@@ -1084,7 +1181,7 @@ class FacturasGlobales{
                     "marcado" => $marcado["total"],
                     "tickets" => $marcado["tickets"],
                     "abonos" => $marcado["abonos"],
-                    "archivos" => $ruta."/facturas/".$respuestaTimbrado["uuid"]
+                    "archivos" => $rutaarchivos."/".$respuestaTimbrado["uuid"]
                 );
 
             }
@@ -1176,12 +1273,13 @@ class FacturasGlobales{
      * @param int $idformapago
      * @param array $periodo
      * @param float $subtotal
+     * @param float $tasaiva  Tasa de IVA del comprobante; por default TASA_IVA
      * @param bool $pruebas   Timbra contra el ambiente de pruebas del PAC. El CFDI que
      *                        regresa NO tiene validez fiscal: sirve para revisar que el
      *                        comprobante salga bien antes de gastar un folio de verdad.
      * @return array Respuesta del timbrador
      */
-    private function timbrar($emisor, $idformapago, $periodo, $subtotal, $pruebas = false){
+    private function timbrar($emisor, $idformapago, $periodo, $subtotal, $pruebas = false, $tasaiva = null){
         $query = "
         select
             b.formapago
@@ -1253,7 +1351,7 @@ class FacturasGlobales{
                 )
             ),
             "subtotal" => $subtotal,
-            "iva_trasladado" => self::TASA_IVA,
+            "iva_trasladado" => (($tasaiva === null) ? self::TASA_IVA : $tasaiva),
             "metodopago" => "PUE",
             "formapago" => $formapago,
             "moneda" => "MXN",
