@@ -147,6 +147,61 @@ class FacturasGlobales{
     }
 
     /**
+     * Clave del SAT con la que se declara cada forma de pago interna en la global.
+     *
+     * No se toma de tcatformaspago.idformapago_sat a propósito: ahí la tarjeta apunta a la
+     * 28 (tarjeta de débito) y estas facturas se declaran con la 04 (tarjeta de crédito).
+     * Ese mapeo del catálogo lo usan también los complementos de pago, así que se deja como
+     * está y la equivalencia de la global se fija aquí.
+     *
+     * @access private
+     * @return array idformapago interno => clave del SAT
+     */
+    private function clavesSAT(){
+        return array(
+            self::FORMAPAGO_TARJETA => "04",
+            self::FORMAPAGO_TRANSFERENCIA => "03"
+        );
+    }
+
+    /**
+     * Resuelve la forma de pago del CFDI: la clave que va en el comprobante y el id con el
+     * que se guarda en tfacturas, los dos a partir del mismo mapa para que el listado diga
+     * exactamente lo que dice el CFDI.
+     *
+     * @access public
+     * @param int $idformapago   Forma de pago interna (tcatformaspago)
+     * @return array clave (por ejemplo "04") e idformapago_sat
+     */
+    public function formaPagoSAT($idformapago){
+        $claves = $this->clavesSAT();
+
+        if(!isset($claves[(int)$idformapago])){
+            throw new Exception("La forma de pago interna ".$idformapago." no tiene una clave del SAT definida para la factura global");
+        }
+
+        $clave = $claves[(int)$idformapago];
+
+        $query = "
+        select
+            idformapago
+        from
+            sat_tcatformaspago
+        where
+            formapago = '".mysqli_real_escape_string($this->con,$clave)."'";
+        $idformapago_sat = mysqli_fetch_assoc(mysqli_query($this->con,$query))["idformapago"];
+
+        if(empty($idformapago_sat)){
+            throw new Exception("La clave ".$clave." no existe en el catálogo de formas de pago del SAT (sat_tcatformaspago)");
+        }
+
+        return array(
+            "formapago" => $clave,
+            "idformapago_sat" => $idformapago_sat
+        );
+    }
+
+    /**
      * Valida el usuario al que se le va a acreditar la factura.
      *
      * tfacturas.idusuario tiene llave foránea a tusuarios: si no existe, el INSERT truena
@@ -718,18 +773,7 @@ class FacturasGlobales{
                     throw new Exception("No se encontró el método de pago PUE en el catálogo del SAT");
                 }
 
-                $query = "
-                select
-                    idformapago_sat
-                from
-                    tcatformaspago
-                where
-                    idformapago = '".$idformapago."'";
-                $idformapago_sat = mysqli_fetch_assoc(mysqli_query($this->con,$query))["idformapago_sat"];
-
-                if(empty($idformapago_sat)){
-                    throw new Exception("La forma de pago ".$idformapago." no tiene equivalencia en el catálogo del SAT (tcatformaspago.idformapago_sat)");
-                }
+                $idformapago_sat = $this->formaPagoSAT($idformapago)["idformapago_sat"];
 
                 // Timbrar es el punto de no retorno: de aquí en adelante el CFDI ya existe
                 // ante el SAT y cualquier fallo obliga a cancelarlo, así que todo lo que
@@ -964,18 +1008,7 @@ class FacturasGlobales{
                 throw new Exception("No se encontró el método de pago PUE en el catálogo del SAT");
             }
 
-            $query = "
-            select
-                idformapago_sat
-            from
-                tcatformaspago
-            where
-                idformapago = '".$idformapago."'";
-            $idformapago_sat = mysqli_fetch_assoc(mysqli_query($this->con,$query))["idformapago_sat"];
-
-            if(empty($idformapago_sat)){
-                throw new Exception("La forma de pago ".$idformapago." no tiene equivalencia en el catálogo del SAT (tcatformaspago.idformapago_sat)");
-            }
+            $idformapago_sat = $this->formaPagoSAT($idformapago)["idformapago_sat"];
 
             // El total capturado ya trae el IVA dentro, igual que el dinero que cobra la
             // tienda. desglose() reparte subtotal e IVA de modo que el total del CFDI caiga
@@ -1280,22 +1313,7 @@ class FacturasGlobales{
      * @return array Respuesta del timbrador
      */
     private function timbrar($emisor, $idformapago, $periodo, $subtotal, $pruebas = false, $tasaiva = null){
-        $query = "
-        select
-            b.formapago
-        from
-            tcatformaspago a
-        join
-            sat_tcatformaspago b
-        on
-            b.idformapago = a.idformapago_sat
-        where
-            a.idformapago = '".mysqli_real_escape_string($this->con,$idformapago)."'";
-        $formapago = mysqli_fetch_assoc(mysqli_query($this->con,$query))["formapago"];
-
-        if(empty($formapago)){
-            throw new Exception("La forma de pago ".$idformapago." no tiene equivalencia en el catálogo del SAT (tcatformaspago.idformapago_sat)");
-        }
+        $formapago = $this->formaPagoSAT($idformapago)["formapago"];
 
         $ruta = $_SERVER["DOCUMENT_ROOT"]."/emisores/".str_replace("&","_",$emisor["rfc"]);
         $numero_certificado = $this->obtenerNumeroCertificado($ruta."/sat/certificado.cer");
