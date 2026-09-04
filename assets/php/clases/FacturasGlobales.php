@@ -8,10 +8,10 @@
  *
  *   - Tickets de mostrador (ttickets sin pedido): el cliente pagó y no pidió factura. El
  *     dinero está en tformaspagoticket.
- *   - Abonos a pedidos que cayeron sobre la parte del pedido que todavía no se factura
- *     (tformaspagopedido con idfactura NULL). Lo que se abona contra una factura del
- *     pedido no entra aquí: ese ingreso ya lo ampara esa factura, y lo que falta en ese
- *     caso es el complemento de pago, no una global.
+ *   - Abonos a pedidos sin facturar: lo que se cobró de un pedido que no tiene ninguna
+ *     factura vigente. Un pedido con factura queda fuera completo, aunque esté facturado
+ *     solo en parte: ese ingreso ya lo ampara la factura, y lo que falta en ese caso es
+ *     el complemento de pago, no una global.
  *
  * Los dos orígenes se acotan además a las sucursales marcadas con tsucursales.global = 1.
  * No todas las sucursales las declara este emisor: las que no traen la bandera facturan
@@ -381,6 +381,12 @@ class FacturasGlobales{
      * left join por lo mismo que los tickets: sin sucursal comprobable, el dinero se queda
      * fuera.
      *
+     * Si el pedido está facturado se resuelve por los dos caminos que existen: g son los
+     * pedidos con alguna factura vigente en tpedidosfacturas (facturación parcial), y h es
+     * el respaldo de tpedidos.idfactura, donde viven las facturas anteriores a esa
+     * migración y a las que tpedidosfacturas no llega. Basta una vigente por cualquiera de
+     * los dos lados para que el pedido quede fuera de la global.
+     *
      * @access private
      * @return string
      */
@@ -395,6 +401,25 @@ class FacturasGlobales{
             tsucursales d
         on
             d.idsucursal = c.idsucursal
+        left join
+            (
+            select distinct
+                pf.idpedido
+            from
+                tpedidosfacturas pf
+            join
+                tfacturas ff
+            on
+                ff.idfactura = pf.idfactura
+            where
+                coalesce(ff.status,1) <> 3
+            ) g
+        on
+            g.idpedido = a.idpedido
+        left join
+            tfacturas h
+        on
+            h.idfactura = c.idfactura
         left join
             tcatformaspago b
         on
@@ -423,18 +448,25 @@ class FacturasGlobales{
     }
 
     /**
-     * Qué abono a pedido entra a la global: únicamente el que no cayó sobre ninguna
-     * factura (idfactura NULL), que es la parte del pedido que nadie facturó, y solo si
-     * el pedido es de una sucursal marcada con tsucursales.global = 1.
+     * Qué abono a pedido entra a la global. Se piden las tres cosas a la vez: que el
+     * pedido no tenga ninguna factura vigente, que sea de una sucursal marcada con
+     * tsucursales.global = 1, y que el abono mismo no haya caído sobre una factura.
+     *
+     * El criterio manda a nivel pedido, no a nivel abono. Un pedido con factura vigente
+     * queda fuera completo, aunque esté facturado solo en parte y tenga abonos sin ligar:
+     * ahí no hay forma de saber sin revisarlo a mano si ese dinero corresponde a la parte
+     * ya facturada, y declararlo en la global lo pondría dos veces ante el SAT. Se prefiere
+     * quedarse corto y que se revise, a declarar de más. Ojo con eso: la parte no facturada
+     * de un pedido parcial no se declara en ningún lado, hay que meterla a mano.
      *
      * Los abonos aplicados a una factura quedan fuera aunque su complemento no se haya
      * timbrado: ese ingreso ya lo ampara la factura y meterlo en la global lo declararía
      * dos veces. Lo que ahí falta es el complemento, y el cronjob los reporta aparte para
      * que se revisen.
      *
-     * Los abonos que apuntan a una factura cancelada también quedan fuera, porque el
-     * pedido pudo refacturarse (tformaspagopedido.idfactura no se reapunta al refacturar,
-     * así que no hay forma de distinguir sin revisar el pedido). El cronjob los reporta.
+     * Los abonos que apuntan a una factura cancelada también quedan fuera, aunque el pedido
+     * ya no tenga ninguna vigente: tformaspagopedido.idfactura no se reapunta al refacturar,
+     * así que ese renglón no es confiable. El cronjob los reporta.
      *
      * La última condición cubre los pagos legados: si el pago se capturó con desglose por
      * documento (e), un renglón sin factura es dinero sin amparar por definición. Si no
@@ -461,6 +493,8 @@ class FacturasGlobales{
             a.idfacturaglobal is null and
             a.monto > 0 and
             d.global = 1 and
+            g.idpedido is null and
+            (c.idfactura is null or c.idfactura = 0 or h.status = 3) and
             a.idfactura is null and
             a.fecha >= '".$inicio."' and
             a.fecha < '".$fin."' and
