@@ -10,6 +10,12 @@
  * una factura por forma de pago (el CFDI declara una sola FormaPago), cada una con un
  * único concepto por el total del periodo.
  *
+ * Solo entra el dinero de las sucursales marcadas con tsucursales.global = 1, tanto en los
+ * tickets (ttickets.idsucursal) como en los abonos (la sucursal del pedido). Las sucursales
+ * sin la bandera declaran por otra vía y quedan fuera de la global de este emisor: prender
+ * o apagar la bandera cambia lo que se factura, así que conviene correr la simulación
+ * después de tocarla.
+ *
  * Lo que se declara en cada global queda marcado en tformaspagoticket.idfacturaglobal y
  * tformaspagopedido.idfacturaglobal, así que una segunda corrida del mismo mes no vuelve a
  * tomar el mismo dinero. Requiere la migración sql/facturas_globales.sql.

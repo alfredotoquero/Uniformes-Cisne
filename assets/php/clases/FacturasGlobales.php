@@ -13,6 +13,11 @@
  *     pedido no entra aquí: ese ingreso ya lo ampara esa factura, y lo que falta en ese
  *     caso es el complemento de pago, no una global.
  *
+ * Los dos orígenes se acotan además a las sucursales marcadas con tsucursales.global = 1.
+ * No todas las sucursales las declara este emisor: las que no traen la bandera facturan
+ * por otra vía y su dinero no debe entrar aquí. El ticket dice su sucursal directo
+ * (ttickets.idsucursal) y el abono la hereda del pedido (tpedidos.idsucursal).
+ *
  * Se emite una factura por forma de pago, porque el CFDI declara una sola FormaPago y el
  * SAT tiene que ver el dinero de tarjeta separado del de transferencia. Cada una es un
  * consolidado: un único concepto con el total del periodo, no un renglón por ticket.
@@ -297,6 +302,10 @@ class FacturasGlobales{
      * renglones cuando el timbrado sale bien: si el criterio viviera duplicado, cualquier
      * ajuste dejaría de marcar exactamente lo que se facturó.
      *
+     * La sucursal entra con join y no con left join a propósito: un ticket cuya sucursal
+     * no exista no puede comprobarse que sea de las que este emisor declara, así que se
+     * queda fuera en lugar de colarse por un NULL.
+     *
      * @access private
      * @return string
      */
@@ -307,6 +316,10 @@ class FacturasGlobales{
             ttickets a
         on
             a.idticket = b.idticket
+        join
+            tsucursales e
+        on
+            e.idsucursal = a.idsucursal
         left join
             tcatformaspago c
         on
@@ -320,10 +333,14 @@ class FacturasGlobales{
     /**
      * Qué cobro de mostrador entra a la global.
      *
-     * Solo tickets de venta directa. Registrar un pago a pedido crea un ttickets con su
-     * renglón en tformaspagoticket, así que ese dinero existe en las dos tablas: se toma
-     * únicamente del otro origen (tformaspagopedido), que además es el único que dice a qué
-     * documento se aplicó cada peso. Contarlo aquí también lo duplicaría.
+     * Solo tickets de venta directa de una sucursal marcada con tsucursales.global = 1.
+     * Las demás sucursales declaran su dinero por otra vía; incluirlas aquí facturaría
+     * ingresos que no le tocan a este emisor.
+     *
+     * Registrar un pago a pedido crea un ttickets con su renglón en tformaspagoticket, así
+     * que ese dinero existe en las dos tablas: se toma únicamente del otro origen
+     * (tformaspagopedido), que además es el único que dice a qué documento se aplicó cada
+     * peso. Contarlo aquí también lo duplicaría.
      *
      * Se excluye por las dos marcas que deja el pago —el pedido y el idpago— y no solo por
      * una: idpago lo escribe Pagos::agregarPago de la tienda, e idpedido lo escriben tanto
@@ -348,6 +365,7 @@ class FacturasGlobales{
             b.idfacturaglobal is null and
             b.monto > 0 and
             a.status = 'A' and
+            e.global = 1 and
             coalesce(a.idpedido,0) = 0 and
             a.idpago is null and
             a.fecha >= '".$inicio."' and
@@ -358,12 +376,25 @@ class FacturasGlobales{
     /**
      * Tablas de las que salen los abonos a pedidos.
      *
+     * El abono no dice de qué sucursal es: la hereda del pedido, así que se pasa por
+     * tpedidos para poder mirar la bandera de tsucursales. Los dos van con join y no con
+     * left join por lo mismo que los tickets: sin sucursal comprobable, el dinero se queda
+     * fuera.
+     *
      * @access private
      * @return string
      */
     private function origenAbonos(){
         return "
             tformaspagopedido a
+        join
+            tpedidos c
+        on
+            c.idpedido = a.idpedido
+        join
+            tsucursales d
+        on
+            d.idsucursal = c.idsucursal
         left join
             tcatformaspago b
         on
@@ -393,7 +424,8 @@ class FacturasGlobales{
 
     /**
      * Qué abono a pedido entra a la global: únicamente el que no cayó sobre ninguna
-     * factura (idfactura NULL), que es la parte del pedido que nadie facturó.
+     * factura (idfactura NULL), que es la parte del pedido que nadie facturó, y solo si
+     * el pedido es de una sucursal marcada con tsucursales.global = 1.
      *
      * Los abonos aplicados a una factura quedan fuera aunque su complemento no se haya
      * timbrado: ese ingreso ya lo ampara la factura y meterlo en la global lo declararía
@@ -428,6 +460,7 @@ class FacturasGlobales{
             a.idformapago = '".$idformapago."' and
             a.idfacturaglobal is null and
             a.monto > 0 and
+            d.global = 1 and
             a.idfactura is null and
             a.fecha >= '".$inicio."' and
             a.fecha < '".$fin."' and
@@ -534,6 +567,9 @@ class FacturasGlobales{
      * complemento, y en el segundo hay que confirmar si el pedido se refacturó o si ese
      * ingreso se quedó sin amparar y debe entrar a mano a una global.
      *
+     * Se filtra por la misma bandera de sucursal que la global: lo de las sucursales que
+     * no declara este emisor no es trabajo pendiente aquí y solo ensuciaría el log.
+     *
      * @access public
      * @param int $idformapago
      * @param array $periodo
@@ -561,6 +597,14 @@ class FacturasGlobales{
         from
             tformaspagopedido a
         join
+            tpedidos d
+        on
+            d.idpedido = a.idpedido
+        join
+            tsucursales s
+        on
+            s.idsucursal = d.idsucursal
+        join
             tfacturas c
         on
             c.idfactura = a.idfactura
@@ -572,6 +616,7 @@ class FacturasGlobales{
             a.idformapago = '".$idformapago."' and
             a.idfacturaglobal is null and
             a.monto > 0 and
+            s.global = 1 and
             a.fecha >= '".$inicio."' and
             a.fecha < '".$fin."' and
             (
