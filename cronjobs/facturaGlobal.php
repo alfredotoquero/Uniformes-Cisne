@@ -6,9 +6,13 @@
  *
  * Consolida todo el dinero que entró por tarjeta y por transferencia durante el mes y que
  * nunca se amparó con un CFDI: los tickets de mostrador que nadie pidió facturados y los
- * abonos a pedidos que cayeron sobre la parte del pedido que todavía no se factura. Emite
- * una factura por forma de pago (el CFDI declara una sola FormaPago), cada una con un
- * único concepto por el total del periodo.
+ * abonos a pedidos que no tienen ninguna factura vigente. Emite una factura por forma de
+ * pago (el CFDI declara una sola FormaPago), cada una con un único concepto por el total
+ * del periodo.
+ *
+ * Un pedido con factura queda fuera completo, aunque esté facturado solo en parte. Es a
+ * propósito: la global nunca declara de más, pero la parte no facturada de un pedido
+ * parcial tampoco se declara sola y hay que meterla a mano.
  *
  * Solo entra el dinero de las sucursales marcadas con tsucursales.global = 1, tanto en los
  * tickets (ttickets.idsucursal) como en los abonos (la sucursal del pedido). Las sucursales
