@@ -481,7 +481,8 @@ class NotasCredito{
             c.serie_notascredito,
             c.folio_notascredito,
             d.regimenfiscal as regimenfiscal_emisor,
-            f.idtienda
+            -- Las facturas directas no tienen pedido: su tienda viene guardada en la factura
+            coalesce(a.idtienda,f.idtienda) as idtienda
         from
             tfacturas a
         left join

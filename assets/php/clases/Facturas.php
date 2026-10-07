@@ -902,6 +902,8 @@ class Facturas{
             $correo    = $post["txtCorreo"];
             $correoAdicional = isset($post["txtCorreoAdicional"]) ? trim($post["txtCorreoAdicional"]) : "";
 
+            // La tienda guardada en la factura (directas) manda; si no hay, se resuelve por
+            // la sucursal del pedido
             $query = "
             select
                 a.idfactura,
@@ -912,7 +914,7 @@ class Facturas{
                 a.total,
                 a.timbrado,
                 b.rfc as rfc_emisor,
-                d.idtienda
+                coalesce(a.idtienda,d.idtienda) as idtienda
             from
                 tfacturas a
             left join
