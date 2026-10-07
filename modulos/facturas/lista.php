@@ -57,8 +57,12 @@ if ($facturas["respuesta"] == "OK") {
                         <td class="text-center">
                             <?= ($factura["notascredito"] > 0) ? '<i class="uil uil-check text-success"></i>' : '<i class="uil uil-times text-danger"></i>'; ?>
                         </td>
-                        <td><?= $factura["idpedido"] ? $factura["idpedido"] : "—"; ?></td>
-                        <td><?= $factura["folio_ticket"] ? $factura["folio_ticket"] : "—"; ?></td>
+                        <? if ($factura["directa"] == 1) { ?>
+                            <td colspan="2" class="text-center"><span class="badge bg-info">DIRECTA</span></td>
+                        <? } else { ?>
+                            <td><?= $factura["idpedido"] ? $factura["idpedido"] : "—"; ?></td>
+                            <td><?= $factura["folio_ticket"] ? $factura["folio_ticket"] : "—"; ?></td>
+                        <? } ?>
                         <td class="text-end">
                             <button class="btn btn-secondary btn-sm mb-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 Opciones <span class="caret"></span>
@@ -77,7 +81,8 @@ if ($facturas["respuesta"] == "OK") {
                                 if ($factura["status"] == 1) {
                                     // Refacturar reemite los conceptos del pedido, así que solo
                                     // aplica a las facturas que tienen uno: las emitidas desde un
-                                    // ticket se corrigen desde el punto de venta
+                                    // ticket se corrigen desde el punto de venta. Las directas
+                                    // todavía no tienen refacturación
                                     if ($factura["idpedido"]) {
                                     ?>
                                         <li><a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/refacturar.php?idfactura=<?= $factura['idfactura'] ?>" class="dropdown-item">Refacturar</a></li>

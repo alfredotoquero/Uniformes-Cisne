@@ -1,9 +1,13 @@
 <?
 include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Emisores.php");
 include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Clientes.php");
+include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Facturas.php");
 
 $claseEmisores = new Emisores();
 $claseClientes = new Clientes();
+$claseFacturas = new Facturas();
+
+$emitirDirectas = $claseFacturas->puedeEmitirDirectas($_SESSION["usuario"]["idusuario"]);
 
 $emisores = $claseEmisores->obtenerEmisores();
 $clientes = $claseClientes->obtenerClientes(array(
@@ -14,9 +18,11 @@ $clientes = $claseClientes->obtenerClientes(array(
     <div class="row">
         <div class="col-12">
             <div class="page-title-box">
-                <!-- <div class="page-title-right">
-                    <a href="/pedidos/agregar" class="btn btn-primary btn-sm"><i class="uil uil-plus me-1"></i>Agregar</a>
-                </div> -->
+                <? if ($emitirDirectas) { ?>
+                <div class="page-title-right">
+                    <a href="javascript:;" data-fancybox data-type="ajax" data-src="/modulos/facturas/agregar.php" data-touch="false" class="btn btn-primary btn-sm"><i class="uil uil-plus me-1"></i>Nueva factura directa</a>
+                </div>
+                <? } ?>
                 <h4 class="page-title">Facturas</h4>
             </div>
         </div>
@@ -71,6 +77,14 @@ $clientes = $claseClientes->obtenerClientes(array(
                                         <option value="1">Activas</option>
                                         <option value="2">Pendientes de cancelación</option>
                                         <option value="3">Canceladas</option>
+                                    </select>
+                                </div>
+                                <div class="col-12 mt-2 col-md-3">
+                                    <select name="slcOrigen" id="slcOrigen" class="form-control">
+                                        <option value="">Todos los orígenes</option>
+                                        <option value="pedido">Pedido</option>
+                                        <option value="ticket">Ticket</option>
+                                        <option value="directa">Directa</option>
                                     </select>
                                 </div>
                                 <div class="col-12 mt-2 col-md-auto">
