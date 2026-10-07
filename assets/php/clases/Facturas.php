@@ -308,11 +308,16 @@ class Facturas{
             // El join con sat_tcatusoscfdi lleva collate explícito porque el catálogo del SAT
             // quedó en utf8mb3_general_ci y tfacturas en utf8mb3_unicode_ci: sin él MySQL
             // aborta la consulta completa por mezcla ilegal de collations.
+            //
+            // Quien emitió la factura está en idusuario (administrativo) o en idvendedor
+            // (tienda, facturas de ticket), nunca en las dos: el nombre sale de la que tenga
+            // valor.
             $query = "
             select
                 a.idfactura,
                 a.idusuario,
-                b.nombre as usuario,
+                a.idvendedor,
+                coalesce(b.nombre,j.nombre) as usuario,
                 a.idcliente,
                 a.idrazonsocial,
                 case when a.idrazonsocial > 0 then c.razon_social else a.razonsocial end as cliente,
@@ -344,6 +349,10 @@ class Facturas{
                 tusuarios b
             on
                 b.idusuario = a.idusuario
+            left join
+                tvendedores j
+            on
+                j.idvendedor = a.idvendedor
             left join
                 tclienterazonessociales c
             on
