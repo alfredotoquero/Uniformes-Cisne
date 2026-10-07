@@ -50,22 +50,7 @@ $_SESSION["authToken"] = sha1(uniqid(microtime(), true));
         <!-- Paso 1: Conceptos -->
         <div id="stepConceptosFD">
             <p class="text-muted mb-2">Captura los conceptos a facturar. Los precios son unitarios <strong>sin IVA</strong>.</p>
-            <div class="table-responsive mb-2">
-                <table class="table table-sm table-bordered mb-0" id="tblConceptosFD">
-                    <thead class="table-light">
-                        <tr>
-                            <th style="width:90px;">Cantidad</th>
-                            <th style="width:220px;">Clave prod/serv</th>
-                            <th style="width:170px;">Clave unidad</th>
-                            <th>Descripción</th>
-                            <th style="width:120px;">Precio unitario</th>
-                            <th style="width:110px;" class="text-end">Importe</th>
-                            <th style="width:40px;"></th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
+            <div id="divConceptosFD" class="mb-2"></div>
             <button type="button" class="btn btn-light btn-sm mb-3" onclick="agregarConceptoFD();"><i class="uil uil-plus me-1"></i>Agregar concepto</button>
 
             <div class="row justify-content-end">
@@ -94,120 +79,127 @@ $_SESSION["authToken"] = sha1(uniqid(microtime(), true));
 
         <!-- Paso 2: Datos fiscales -->
         <div id="stepDatosFD" style="display:none;">
+            <!-- Las secciones van a todo lo ancho y los campos se reparten dentro de cada una,
+                 para que la pantalla quede pareja con y sin captura de razón social -->
+            <h5 class="text-uppercase text-muted small fw-bold border-bottom pb-1 mb-2">Receptor</h5>
             <div class="row">
-                <div class="col-12 col-md-6">
-                    <div class="mb-3">
-                        <label for="slcClienteFD" class="form-label">Cliente</label>
-                        <select class="select2fd" name="slcCliente" id="slcClienteFD" onchange="cambiarClienteFD(this.value);">
-                            <option value="0">Sin cliente (capturar datos fiscales)</option>
-                            <?php
-                            if($clientes["respuesta"] == "OK"){
-                                while($cliente = mysqli_fetch_assoc($clientes["clientes"])){
-                                    ?>
-                                    <option value="<?= $cliente["idcliente"] ?>"><?= htmlspecialchars($cliente["nombre"]) ?></option>
-                                    <?php
-                                }
+                <div class="col-12 col-md-6 mb-3">
+                    <label for="slcClienteFD" class="form-label">Cliente</label>
+                    <select class="select2fd" name="slcCliente" id="slcClienteFD" onchange="cambiarClienteFD(this.value);">
+                        <option value="0">Sin cliente (capturar datos fiscales)</option>
+                        <?php
+                        if($clientes["respuesta"] == "OK"){
+                            while($cliente = mysqli_fetch_assoc($clientes["clientes"])){
+                                ?>
+                                <option value="<?= $cliente["idcliente"] ?>"><?= htmlspecialchars($cliente["nombre"]) ?></option>
+                                <?php
                             }
-                            ?>
+                        }
+                        ?>
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 mb-3" id="divRazonSocialFD" style="display:none;">
+                    <label for="slcRazonSocialFD" class="form-label">Razón social<span>*</span></label>
+                    <select class="form-control" name="slcRazonSocial" id="slcRazonSocialFD" data-mensajeerror="Debes indicar una razón social" onchange="cambiarRazonSocialFD(this.value);"></select>
+                </div>
+            </div>
+            <div id="divNuevaRazonSocialFD">
+                <div class="row">
+                    <div class="col-12 col-md-8 mb-3">
+                        <label for="txtRazonSocialFD" class="form-label">Razón social<span>*</span></label>
+                        <input type="text" class="form-control uppercase nuevaRazonSocialFD requerido" name="txtRazonSocial" id="txtRazonSocialFD" placeholder="Ingresa la razón social" autocomplete="off" data-mensajeerror="Debes indicar la razón social">
+                    </div>
+                    <div class="col-8 col-md-4 mb-3">
+                        <label for="txtRFCFD" class="form-label">RFC<span>*</span></label>
+                        <input type="text" class="form-control uppercase nuevaRazonSocialFD requerido" name="txtRFC" id="txtRFCFD" placeholder="Ingresa el RFC" autocomplete="off" maxlength="13" data-mensajeerror="Debes indicar el RFC">
+                    </div>
+                    <div class="col-4 col-md-2 mb-3">
+                        <label for="txtCodigoPostalFD" class="form-label">C.P.<span>*</span></label>
+                        <input type="text" class="form-control nuevaRazonSocialFD requerido" name="txtCodigoPostal" id="txtCodigoPostalFD" placeholder="00000" autocomplete="off" maxlength="5" data-mensajeerror="Debes indicar el código postal">
+                    </div>
+                    <div class="col-12 col-md-5 mb-3">
+                        <label for="slcRegimenFiscalFD" class="form-label">Régimen fiscal<span>*</span></label>
+                        <select class="nuevaRazonSocialFD requerido select2fd" name="slcRegimenFiscal" id="slcRegimenFiscalFD" data-mensajeerror="Debes indicar el régimen fiscal">
+                            <option value="0">--Seleccionar--</option>
+                            <?php foreach($regimenesfiscales as $regimenfiscal): ?>
+                                <option value="<?= $regimenfiscal["idregimenfiscal"] ?>"><?= $regimenfiscal["regimenfiscal"]." - ".$regimenfiscal["descripcion"] ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
-                    <div id="divRazonSocialFD" style="display:none;">
-                        <div class="mb-3">
-                            <label for="slcRazonSocialFD" class="form-label">Razón social<span>*</span></label>
-                            <select class="form-control" name="slcRazonSocial" id="slcRazonSocialFD" data-mensajeerror="Debes indicar una razón social" onchange="cambiarRazonSocialFD(this.value);"></select>
-                        </div>
-                    </div>
-                    <div id="divNuevaRazonSocialFD">
-                        <div class="mb-3">
-                            <label for="txtRazonSocialFD" class="form-label">Razón social<span>*</span></label>
-                            <input type="text" class="form-control uppercase nuevaRazonSocialFD requerido" name="txtRazonSocial" id="txtRazonSocialFD" placeholder="Ingresa la razón social" autocomplete="off" data-mensajeerror="Debes indicar la razón social">
-                        </div>
-                        <div class="mb-3">
-                            <label for="txtRFCFD" class="form-label">RFC<span>*</span></label>
-                            <input type="text" class="form-control uppercase nuevaRazonSocialFD requerido" name="txtRFC" id="txtRFCFD" placeholder="Ingresa el RFC" autocomplete="off" data-mensajeerror="Debes indicar el RFC">
-                        </div>
-                        <div class="mb-3">
-                            <label for="txtCodigoPostalFD" class="form-label">Código postal<span>*</span></label>
-                            <input type="text" class="form-control nuevaRazonSocialFD requerido" name="txtCodigoPostal" id="txtCodigoPostalFD" placeholder="Ingresa el código postal" autocomplete="off" maxlength="5" data-mensajeerror="Debes indicar el código postal">
-                        </div>
-                        <div class="mb-3">
-                            <label for="slcRegimenFiscalFD" class="form-label">Régimen fiscal<span>*</span></label>
-                            <select class="nuevaRazonSocialFD requerido select2fd" name="slcRegimenFiscal" id="slcRegimenFiscalFD" data-mensajeerror="Debes indicar el régimen fiscal">
-                                <option value="0">--Seleccionar--</option>
-                                <?php foreach($regimenesfiscales as $regimenfiscal): ?>
-                                    <option value="<?= $regimenfiscal["idregimenfiscal"] ?>"><?= $regimenfiscal["regimenfiscal"]." - ".$regimenfiscal["descripcion"] ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label for="slcUsoCFDIFD" class="form-label">Uso del CFDI<span>*</span></label>
-                            <select class="nuevaRazonSocialFD requerido select2fd" name="slcUsoCFDI" id="slcUsoCFDIFD" data-mensajeerror="Debes indicar el uso del CFDI">
-                                <option value="0">--Seleccionar--</option>
-                                <?php foreach($usoscfdi as $usocfdi): ?>
-                                    <option value="<?= $usocfdi["idusocfdi"] ?>"><?= $usocfdi["usocfdi"]." - ".$usocfdi["descripcion"] ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="txtComentariosFD" class="form-label">Comentarios <small class="text-muted">(opcional)</small></label>
-                        <textarea class="form-control" name="txtComentarios" id="txtComentariosFD" rows="2" placeholder="Se imprimen en el PDF de la factura"></textarea>
+                    <div class="col-12 col-md-5 mb-3">
+                        <label for="slcUsoCFDIFD" class="form-label">Uso del CFDI<span>*</span></label>
+                        <select class="nuevaRazonSocialFD requerido select2fd" name="slcUsoCFDI" id="slcUsoCFDIFD" data-mensajeerror="Debes indicar el uso del CFDI">
+                            <option value="0">--Seleccionar--</option>
+                            <?php foreach($usoscfdi as $usocfdi): ?>
+                                <option value="<?= $usocfdi["idusocfdi"] ?>"><?= $usocfdi["usocfdi"]." - ".$usocfdi["descripcion"] ?></option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
                 </div>
-                <div class="col-12 col-md-6">
-                    <div class="mb-3">
-                        <label for="txtCorreoFD" class="form-label">Correo electrónico<span>*</span></label>
-                        <input type="text" class="form-control requerido" name="txtCorreo" id="txtCorreoFD" placeholder="Ingresa el correo electrónico" autocomplete="off" data-mensajeerror="Debes indicar el correo electrónico">
-                        <small class="text-muted d-block mt-1">Para enviar a múltiples destinatarios, separa los correos con coma (ej: correo1@ejemplo.com, correo2@ejemplo.com)</small>
-                    </div>
-                    <div class="mb-3">
-                        <label for="txtCorreoAdicionalFD" class="form-label">Correos adicionales <small class="text-muted">(opcional)</small></label>
-                        <input type="text" class="form-control" name="txtCorreoAdicional" id="txtCorreoAdicionalFD" placeholder="Ingresa correos adicionales" autocomplete="off">
-                        <small class="text-muted d-block mt-1">Correos extra a los que se enviará la factura, separados por coma. No se guardarán en el sistema.</small>
-                    </div>
-                    <div class="mb-3">
-                        <label for="slcMetodoPagoFD" class="form-label">Método de pago<span>*</span></label>
-                        <select class="form-control requerido" name="slcMetodoPago" id="slcMetodoPagoFD" onchange="validarMetodoPagoFD();" data-mensajeerror="Debes indicar el método de pago">
-                            <option value="0">--Seleccionar--</option>
-                            <?php foreach($metodospago as $metodopago): ?>
-                                <option value="<?= $metodopago["idmetodopago"] ?>"><?= $metodopago["metodopago"]." - ".$metodopago["descripcion"] ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="slcFormaPagoFD" class="form-label">Forma de pago<span>*</span></label>
-                        <select class="requerido select2fd" name="slcFormaPago" id="slcFormaPagoFD" data-mensajeerror="Debes indicar la forma de pago">
-                            <option value="0">--Seleccionar--</option>
-                            <?php foreach($formaspago as $formapago): ?>
-                                <option value="<?= $formapago["idformapago"] ?>"><?= $formapago["formapago"]." - ".$formapago["descripcion"] ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="slcEmisorFD" class="form-label">Emisor<span>*</span></label>
-                        <select class="requerido select2fd" name="slcEmisor" id="slcEmisorFD" data-mensajeerror="Debes indicar un emisor">
-                            <option value="0">--Seleccionar--</option>
-                            <?php foreach($emisores as $emisor): ?>
-                                <option value="<?= $emisor["idemisor"] ?>"><?= $emisor["razon_social"]." - ".$emisor["rfc"] ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="slcTiendaFD" class="form-label">Tienda<span>*</span></label>
-                        <select class="requerido select2fd" name="slcTienda" id="slcTiendaFD" data-mensajeerror="Debes indicar la tienda">
-                            <option value="0">--Seleccionar--</option>
-                            <?php
-                            if($tiendas["respuesta"] == "OK"){
-                                while($tienda = mysqli_fetch_assoc($tiendas["tiendas"])){
-                                    ?>
-                                    <option value="<?= $tienda["idtienda"] ?>"><?= htmlspecialchars($tienda["nombre"]) ?></option>
-                                    <?php
-                                }
+            </div>
+
+            <h5 class="text-uppercase text-muted small fw-bold border-bottom pb-1 mb-2 mt-1">Pago y emisión</h5>
+            <div class="row">
+                <div class="col-12 col-md-6 mb-3">
+                    <label for="slcMetodoPagoFD" class="form-label">Método de pago<span>*</span></label>
+                    <select class="form-control requerido" name="slcMetodoPago" id="slcMetodoPagoFD" onchange="validarMetodoPagoFD();" data-mensajeerror="Debes indicar el método de pago">
+                        <option value="0">--Seleccionar--</option>
+                        <?php foreach($metodospago as $metodopago): ?>
+                            <option value="<?= $metodopago["idmetodopago"] ?>"><?= $metodopago["metodopago"]." - ".$metodopago["descripcion"] ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 mb-3">
+                    <label for="slcFormaPagoFD" class="form-label">Forma de pago<span>*</span></label>
+                    <select class="requerido select2fd" name="slcFormaPago" id="slcFormaPagoFD" data-mensajeerror="Debes indicar la forma de pago">
+                        <option value="0">--Seleccionar--</option>
+                        <?php foreach($formaspago as $formapago): ?>
+                            <option value="<?= $formapago["idformapago"] ?>"><?= $formapago["formapago"]." - ".$formapago["descripcion"] ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 mb-3">
+                    <label for="slcEmisorFD" class="form-label">Emisor<span>*</span></label>
+                    <select class="requerido select2fd" name="slcEmisor" id="slcEmisorFD" data-mensajeerror="Debes indicar un emisor">
+                        <option value="0">--Seleccionar--</option>
+                        <?php foreach($emisores as $emisor): ?>
+                            <option value="<?= $emisor["idemisor"] ?>"><?= $emisor["razon_social"]." - ".$emisor["rfc"] ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 mb-3">
+                    <label for="slcTiendaFD" class="form-label">Tienda<span>*</span></label>
+                    <select class="requerido select2fd" name="slcTienda" id="slcTiendaFD" data-mensajeerror="Debes indicar la tienda">
+                        <option value="0">--Seleccionar--</option>
+                        <?php
+                        if($tiendas["respuesta"] == "OK"){
+                            while($tienda = mysqli_fetch_assoc($tiendas["tiendas"])){
+                                ?>
+                                <option value="<?= $tienda["idtienda"] ?>"><?= htmlspecialchars($tienda["nombre"]) ?></option>
+                                <?php
                             }
-                            ?>
-                        </select>
-                        <small class="text-muted d-block mt-1">De la tienda salen el logo del PDF y la cuenta desde la que se envía el correo.</small>
-                    </div>
+                        }
+                        ?>
+                    </select>
+                    <small class="text-muted d-block mt-1">De la tienda salen el logo del PDF y la cuenta desde la que se envía el correo.</small>
+                </div>
+            </div>
+
+            <h5 class="text-uppercase text-muted small fw-bold border-bottom pb-1 mb-2 mt-1">Envío</h5>
+            <div class="row">
+                <div class="col-12 col-md-6 mb-3">
+                    <label for="txtCorreoFD" class="form-label">Correo electrónico<span>*</span></label>
+                    <input type="text" class="form-control requerido" name="txtCorreo" id="txtCorreoFD" placeholder="Ingresa el correo electrónico" autocomplete="off" data-mensajeerror="Debes indicar el correo electrónico">
+                    <small class="text-muted d-block mt-1">Para varios destinatarios, sepáralos con coma.</small>
+                </div>
+                <div class="col-12 col-md-6 mb-3">
+                    <label for="txtCorreoAdicionalFD" class="form-label">Correos adicionales <small class="text-muted">(opcional)</small></label>
+                    <input type="text" class="form-control" name="txtCorreoAdicional" id="txtCorreoAdicionalFD" placeholder="Ingresa correos adicionales" autocomplete="off">
+                    <small class="text-muted d-block mt-1">Se envían una sola vez; no se guardan en el cliente.</small>
+                </div>
+                <div class="col-12 mb-3">
+                    <label for="txtComentariosFD" class="form-label">Comentarios <small class="text-muted">(opcional)</small></label>
+                    <textarea class="form-control" name="txtComentarios" id="txtComentariosFD" rows="2" placeholder="Se imprimen en el PDF de la factura"></textarea>
                 </div>
             </div>
             <div class="d-flex justify-content-between">
@@ -223,6 +215,13 @@ $_SESSION["authToken"] = sha1(uniqid(microtime(), true));
 var indiceConceptoFD = 0;
 
 $(document).ready(function () {
+    // .fancybox-content trae overflow:auto, así que recorta los desplegables de select2
+    // que se abren cerca del borde inferior (el de tienda quedaba oculto). Con overflow
+    // visible el desplegable sale del recuadro y la ventana del fancy se desplaza si hace
+    // falta; los desplegables siguen dentro de #divFacturaDirecta para no pelear con el
+    // control de foco del fancybox.
+    $("#divFacturaDirecta").closest(".fancybox-content").css("overflow", "visible");
+
     $(".select2fd", "#formFacturaDirecta").select2({
         dropdownParent: $('#divFacturaDirecta'),
         width: '100%'
@@ -234,30 +233,57 @@ $(document).ready(function () {
         this.value = this.value.toUpperCase();
     });
 
-    $("#tblConceptosFD").on("input", ".inputCantidadFD, .inputPrecioFD", function () {
+    $("#divConceptosFD").on("input", ".inputCantidadFD, .inputPrecioFD", function () {
         calcularTotalesFD();
     });
 
     agregarConceptoFD();
 });
 
+// Cada concepto ocupa dos líneas: arriba las claves del SAT y la cantidad, abajo la
+// descripción y los importes. Las columnas coinciden entre líneas (7/3/2) para que se lean
+// alineadas, y la clave de producto tiene espacio para su descripción completa.
 function agregarConceptoFD(){
     var i = indiceConceptoFD++;
-    var fila = $(
-        '<tr data-indice="' + i + '">' +
-            '<td><input type="number" class="form-control form-control-sm inputCantidadFD" name="conceptos[' + i + '][cantidad]" value="1" min="0.01" step="0.01"></td>' +
-            '<td><select class="slcProdServFD" name="conceptos[' + i + '][claveprodserv]"></select></td>' +
-            '<td><select class="slcUnidadFD" name="conceptos[' + i + '][claveunidad]"></select></td>' +
-            '<td><input type="text" class="form-control form-control-sm inputDescripcionFD" name="conceptos[' + i + '][descripcion]" maxlength="1000" autocomplete="off"></td>' +
-            '<td><input type="number" class="form-control form-control-sm inputPrecioFD" name="conceptos[' + i + '][valorunitario]" min="0.01" step="0.01"></td>' +
-            '<td class="text-end align-middle tdImporteFD">$0.00</td>' +
-            '<td class="text-center align-middle"><a href="javascript:;" class="text-danger" onclick="eliminarConceptoFD(this);" title="Eliminar"><i class="uil uil-trash-alt"></i></a></td>' +
-        '</tr>'
+    var concepto = $(
+        '<div class="conceptoFD border rounded px-2 pt-1 pb-2 mb-2" data-indice="' + i + '">' +
+            '<div class="d-flex justify-content-between align-items-center mb-1">' +
+                '<span class="small fw-bold text-muted numConceptoFD"></span>' +
+                '<a href="javascript:;" class="text-danger" onclick="eliminarConceptoFD(this);" title="Eliminar concepto"><i class="uil uil-trash-alt"></i></a>' +
+            '</div>' +
+            '<div class="row g-2">' +
+                '<div class="col-12 col-md-7">' +
+                    '<label class="form-label small mb-0">Clave producto/servicio SAT</label>' +
+                    '<select class="slcProdServFD" name="conceptos[' + i + '][claveprodserv]"></select>' +
+                '</div>' +
+                '<div class="col-8 col-md-3">' +
+                    '<label class="form-label small mb-0">Clave unidad</label>' +
+                    '<select class="slcUnidadFD" name="conceptos[' + i + '][claveunidad]"></select>' +
+                '</div>' +
+                '<div class="col-4 col-md-2">' +
+                    '<label class="form-label small mb-0">Cantidad</label>' +
+                    '<input type="number" class="form-control inputCantidadFD" name="conceptos[' + i + '][cantidad]" value="1" min="0.01" step="0.01">' +
+                '</div>' +
+                '<div class="col-12 col-md-7">' +
+                    '<label class="form-label small mb-0">Descripción</label>' +
+                    '<input type="text" class="form-control inputDescripcionFD" name="conceptos[' + i + '][descripcion]" maxlength="1000" autocomplete="off">' +
+                '</div>' +
+                '<div class="col-6 col-md-3">' +
+                    '<label class="form-label small mb-0">Precio unitario (sin IVA)</label>' +
+                    '<input type="number" class="form-control inputPrecioFD" name="conceptos[' + i + '][valorunitario]" min="0.01" step="0.01">' +
+                '</div>' +
+                '<div class="col-6 col-md-2">' +
+                    '<label class="form-label small mb-0">Importe</label>' +
+                    '<div class="form-control bg-light text-end importeFD">$0.00</div>' +
+                '</div>' +
+            '</div>' +
+        '</div>'
     );
 
-    $("#tblConceptosFD tbody").append(fila);
+    $("#divConceptosFD").append(concepto);
+    numerarConceptosFD();
 
-    fila.find(".slcProdServFD").select2({
+    concepto.find(".slcProdServFD").select2({
         dropdownParent: $('#divFacturaDirecta'),
         width: '100%',
         placeholder: "Buscar clave",
@@ -281,7 +307,7 @@ function agregarConceptoFD(){
         }
     });
 
-    fila.find(".slcUnidadFD").select2({
+    concepto.find(".slcUnidadFD").select2({
         dropdownParent: $('#divFacturaDirecta'),
         width: '100%',
         placeholder: "Buscar unidad",
@@ -307,12 +333,19 @@ function agregarConceptoFD(){
 }
 
 function eliminarConceptoFD(elemento){
-    if($("#tblConceptosFD tbody tr").length <= 1){
+    if($("#divConceptosFD .conceptoFD").length <= 1){
         Swal.fire("Atención", "La factura debe tener al menos un concepto.", "warning");
         return;
     }
-    $(elemento).closest("tr").remove();
+    $(elemento).closest(".conceptoFD").remove();
+    numerarConceptosFD();
     calcularTotalesFD();
+}
+
+function numerarConceptosFD(){
+    $("#divConceptosFD .conceptoFD").each(function (n) {
+        $(this).find(".numConceptoFD").text("Concepto " + (n + 1));
+    });
 }
 
 // Redondeo a centavos igual que en el servidor: cada importe se redondea por separado y
@@ -323,11 +356,11 @@ function redondearFD(valor){
 
 function calcularTotalesFD(){
     var subtotal = 0;
-    $("#tblConceptosFD tbody tr").each(function () {
+    $("#divConceptosFD .conceptoFD").each(function () {
         var cantidad = redondearFD(parseFloat($(this).find(".inputCantidadFD").val()) || 0);
         var precio = redondearFD(parseFloat($(this).find(".inputPrecioFD").val()) || 0);
         var importe = redondearFD(cantidad * precio);
-        $(this).find(".tdImporteFD").text("$" + formatMoney(importe, 2, ".", ","));
+        $(this).find(".importeFD").text("$" + formatMoney(importe, 2, ".", ","));
         subtotal = redondearFD(subtotal + importe);
     });
 
@@ -342,7 +375,7 @@ function calcularTotalesFD(){
 
 function siguientePasoFD(){
     var error = "";
-    $("#tblConceptosFD tbody tr").each(function (n) {
+    $("#divConceptosFD .conceptoFD").each(function (n) {
         var renglon = n + 1;
         if(!(parseFloat($(this).find(".inputCantidadFD").val()) > 0)){
             error = "La cantidad del concepto " + renglon + " debe ser mayor a cero.";
