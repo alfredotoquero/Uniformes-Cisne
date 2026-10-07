@@ -27,7 +27,8 @@ class Facturas{
             $idcliente = mysqli_real_escape_string($this->con,$post["slcCliente"]);
             $uuid = mysqli_real_escape_string($this->con,$post["txtUUID"]);
             $status = mysqli_real_escape_string($this->con,$post["slcStatus"]);
-            
+            $origen = isset($post["slcOrigen"]) ? $post["slcOrigen"] : "";
+
             $pagina = (isset($post["pagina"])) ? $post["pagina"] : 1;
             $regpagina = 100;
 
@@ -56,6 +57,7 @@ class Facturas{
                 a.status,
                 a.timbrado,
                 a.registro,
+                a.directa,
                 g.idpedido,
                 h.folio as folio_ticket,
                 (
@@ -129,6 +131,19 @@ class Facturas{
                 }
                 if(!empty($status)){
                     $condiciones[] = "a.status = '".$status."'";
+                }
+                // Las directas se distinguen por la marca y no por la falta de pedido o
+                // ticket: una factura de pedido cancelada también pierde su relación
+                switch($origen){
+                    case "pedido":
+                        $condiciones[] = "g.idpedido is not null";
+                    break;
+                    case "ticket":
+                        $condiciones[] = "h.idfactura is not null";
+                    break;
+                    case "directa":
+                        $condiciones[] = "a.directa = 1";
+                    break;
                 }
             }
 
