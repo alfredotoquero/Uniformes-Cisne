@@ -1,8 +1,16 @@
 <?php
 class Facturas{
 
+    // Nombre del permiso en tpermisos (sql/facturas_directas.sql). Se busca por nombre
+    // porque el idpermiso depende de la base en la que se haya corrido la migración.
+    const PERMISO_DIRECTAS = "Emitir facturas directas";
+
     private $con;
     private $claseSAT;
+
+    // El timbrador distingue entre CFDI reales (0) y de prueba (1). Solo lo usan las
+    // facturas directas: se pone en 1 para probar el flujo completo y se regresa a 0.
+    private $pruebas = 0;
 
     public function __construct(){
         include($_SERVER["DOCUMENT_ROOT"]."/assets/php/otros/con.php");
@@ -996,6 +1004,721 @@ class Facturas{
         }finally{
             return $respuesta;
         }
+    }
+
+    /**
+     * Indica si el usuario puede emitir facturas directas.
+     *
+     * @access public
+     * @param int $idusuario
+     * @return boolean
+     */
+    public function puedeEmitirDirectas($idusuario){
+        $query = "
+        select
+            up.idpermiso
+        from
+            trusuariopermisos up
+        join
+            tpermisos p
+        on
+            p.idpermiso = up.idpermiso
+        where
+            up.idusuario = '".(int)$idusuario."' and
+            p.permiso = '".mysqli_real_escape_string($this->con,self::PERMISO_DIRECTAS)."'
+        limit 1";
+        $result = mysqli_query($this->con,$query);
+
+        return ($result && mysqli_num_rows($result) > 0);
+    }
+
+    /**
+     * Tasas de IVA que se ofrecen en las facturas directas. La llave es lo que se guarda en
+     * tfacturas.tasaiva.
+     *
+     * @access public
+     * @return array
+     */
+    public function obtenerTasasIVA(){
+        return array(
+            "16" => "IVA 16%",
+            "8" => "IVA 8% (región fronteriza)",
+            "0" => "IVA 0%",
+            "exento" => "Exento de IVA"
+        );
+    }
+
+    /**
+     * Traduce la tasa elegida a lo que espera el timbrador: el ObjetoImp de los conceptos y
+     * el porcentaje de iva_trasladado.
+     *
+     * @access private
+     * @param string $tasa Llave de obtenerTasasIVA()
+     * @return array
+     */
+    private function impuestoTimbrador($tasa){
+        switch($tasa){
+            case "16":
+            case "8":
+            case "0":
+                return array("objetoimp" => "02", "iva_trasladado" => (int)$tasa);
+            case "exento":
+                // El exento lleva TipoFactor "Exento" en el traslado, sin tasa ni importe,
+                // y el timbrador hoy solo recibe un porcentaje en iva_trasladado. Hasta
+                // confirmar cómo se le pide, es preferible no timbrar a timbrarla con 0%.
+                throw new Exception("La facturación exenta de IVA todavía no está disponible. Contacta a soporte.");
+            default:
+                throw new Exception("La tasa de IVA seleccionada no es válida");
+        }
+    }
+
+    /**
+     * Razones sociales y correos de un cliente, para precargar el formulario de factura
+     * directa cuando se elige el cliente.
+     *
+     * @access public
+     * @param int $idcliente
+     * @return array
+     */
+    public function getDatosClienteFacturacion($idcliente){
+        $idcliente = (int)$idcliente;
+
+        $query = "
+        select
+            correo,
+            correos_adicionales
+        from
+            tclientes
+        where
+            idcliente = '".$idcliente."'";
+        $cliente = mysqli_fetch_assoc(mysqli_query($this->con,$query));
+
+        if(!$cliente){
+            return array(
+                "respuesta" => "ERROR",
+                "mensaje" => "No se encontró el cliente"
+            );
+        }
+
+        $query = "
+        select
+            idrazonsocial,
+            razon_social,
+            rfc
+        from
+            tclienterazonessociales
+        where
+            idcliente = '".$idcliente."' and
+            status = '1'
+        order by
+            razon_social";
+        $razones = mysqli_fetch_all(mysqli_query($this->con,$query),MYSQLI_ASSOC);
+
+        // JSON_FORCE_OBJECT en el controlador convierte los arreglos en objetos, así que
+        // las razones se mandan con llave explícita y el front las recorre como objeto
+        return array(
+            "respuesta" => "OK",
+            "correo" => implode(",",array_filter(array($cliente["correo"],$cliente["correos_adicionales"]))),
+            "razones" => $razones
+        );
+    }
+
+    /**
+     * Timbra una factura con conceptos capturados a mano, sin relación con un pedido ni con
+     * un ticket.
+     *
+     * Los importes se calculan a 2 decimales desde el origen (valor unitario sin IVA
+     * redondeado y cantidad × valor unitario redondeado) para que el XML cuadre igual en
+     * cualquier sistema que lo lea, sin importar cuántos decimales tome.
+     *
+     * @access public
+     * @param array $post
+     * @return array
+     */
+    public function facturarDirecta($post){
+        try{
+            $idusuario = (int)$post["idusuario"];
+
+            if(!$this->puedeEmitirDirectas($idusuario)){
+                throw new Exception("No tienes permiso para emitir facturas directas");
+            }
+
+            $idcliente = (int)$post["slcCliente"];
+            $idrazonsocial = isset($post["slcRazonSocial"]) ? mysqli_real_escape_string($this->con,$post["slcRazonSocial"]) : "";
+            $razonsocial = mysqli_real_escape_string($this->con,trim($post["txtRazonSocial"]));
+            $rfc = mysqli_real_escape_string($this->con,strtoupper(trim($post["txtRFC"])));
+            $codigo_postal = mysqli_real_escape_string($this->con,trim($post["txtCodigoPostal"]));
+            $idregimenfiscal = (int)$post["slcRegimenFiscal"];
+            $idusocfdi = (int)$post["slcUsoCFDI"];
+            $idemisor = (int)$post["slcEmisor"];
+            $idtienda = (int)$post["slcTienda"];
+            $idmetodopago = (int)$post["slcMetodoPago"];
+            // Con PPD el select de forma de pago va deshabilitado y no llega en el POST: la
+            // única forma válida es 99 Por definir
+            $idformapago = ($idmetodopago==1) ? 21 : (int)$post["slcFormaPago"];
+            $tasaiva = isset($post["slcTasaIVA"]) ? (string)$post["slcTasaIVA"] : "";
+            $comentarios = trim(isset($post["txtComentarios"]) ? $post["txtComentarios"] : "");
+            $correo = trim($post["txtCorreo"]);
+            $correoAdicional = isset($post["txtCorreoAdicional"]) ? trim($post["txtCorreoAdicional"]) : "";
+
+            if(!array_key_exists($tasaiva,$this->obtenerTasasIVA())){
+                throw new Exception("Debes indicar la tasa de IVA");
+            }
+
+            $impuesto = $this->impuestoTimbrador($tasaiva);
+
+            // Conceptos
+            $conceptos_post = (!empty($post["conceptos"]) && is_array($post["conceptos"])) ? $post["conceptos"] : array();
+
+            $conceptos = array();
+            $conceptos_factura = array();
+            $subtotal = 0;
+            $renglon = 0;
+
+            foreach($conceptos_post as $concepto){
+                $renglon++;
+
+                $cantidad = round((float)str_replace(",","",$concepto["cantidad"]),2);
+                $valor_unitario = round((float)str_replace(",","",$concepto["valorunitario"]),2);
+                $descripcion = trim($concepto["descripcion"]);
+                $claveprodserv = trim($concepto["claveprodserv"]);
+                $claveunidad = strtoupper(trim($concepto["claveunidad"]));
+
+                if($cantidad <= 0){
+                    throw new Exception("La cantidad del concepto ".$renglon." debe ser mayor a cero");
+                }
+                if($valor_unitario <= 0){
+                    throw new Exception("El precio unitario del concepto ".$renglon." debe ser mayor a cero");
+                }
+                if($descripcion == ""){
+                    throw new Exception("Debes indicar la descripción del concepto ".$renglon);
+                }
+                if(!$this->existeClaveSAT("sat_tcatproductosservicios",$claveprodserv)){
+                    throw new Exception("La clave de producto o servicio del concepto ".$renglon." no es válida");
+                }
+                if(!$this->existeClaveSAT("sat_tcatunidadesmedida",$claveunidad)){
+                    throw new Exception("La clave de unidad del concepto ".$renglon." no es válida");
+                }
+
+                $importe = round($cantidad * $valor_unitario,2);
+
+                $cadena_utf8 = mb_convert_encoding($descripcion,'UTF-8','auto');
+                $descripcion_cfdi = iconv('UTF-8','ASCII//TRANSLIT//IGNORE',$cadena_utf8);
+
+                $conceptos_factura[] = array(
+                    "Cantidad" => $cantidad,
+                    "Descripcion" => $descripcion_cfdi,
+                    "ValorUnitario" => sprintf("%.2f",$valor_unitario),
+                    "Importe" => sprintf("%.2f",$importe),
+                    "ClaveUnidad" => $claveunidad,
+                    "ClaveProdServ" => $claveprodserv,
+                    "ObjetoImp" => $impuesto["objetoimp"]
+                );
+
+                $conceptos[] = array(
+                    "cantidad" => $cantidad,
+                    "claveprodserv" => $claveprodserv,
+                    "claveunidad" => $claveunidad,
+                    "descripcion" => $descripcion,
+                    "valor_unitario" => $valor_unitario,
+                    "importe" => $importe
+                );
+
+                $subtotal = round($subtotal + $importe,2);
+            }
+
+            if(empty($conceptos)){
+                throw new Exception("Debes agregar al menos un concepto");
+            }
+
+            // Receptor: misma lógica que la factura de pedido. Con cliente se usa una de sus
+            // razones sociales (o se le da de alta una nueva); sin cliente los datos solo
+            // viven en el CFDI y se copian en texto a tfacturas.
+            if($idcliente > 0){
+                $query = "
+                select
+                    idcliente
+                from
+                    tclientes
+                where
+                    idcliente = '".$idcliente."'";
+                if(mysqli_num_rows(mysqli_query($this->con,$query)) == 0){
+                    throw new Exception("No se encontró el cliente seleccionado");
+                }
+            }
+
+            $nuevarazonsocial = ($idcliente == 0 || $idrazonsocial === "");
+
+            if(!$nuevarazonsocial && !((int)$idrazonsocial > 0)){
+                throw new Exception("Debes indicar una razón social");
+            }
+
+            if($nuevarazonsocial){
+                if($razonsocial == ""){
+                    throw new Exception("Debes indicar la razón social del receptor");
+                }
+                if(!preg_match('/^[A-Z&Ñ]{3,4}[0-9]{6}[A-Z0-9]{3}$/u',$rfc)){
+                    throw new Exception("El RFC del receptor no tiene un formato válido");
+                }
+                if(!preg_match('/^[0-9]{5}$/',$codigo_postal)){
+                    throw new Exception("El código postal del receptor debe tener 5 dígitos");
+                }
+
+                $query = "
+                select
+                    usocfdi
+                from
+                    sat_tcatusoscfdi
+                where
+                    idusocfdi = '".$idusocfdi."'";
+                $usocfdi = mysqli_fetch_assoc(mysqli_query($this->con,$query))["usocfdi"];
+
+                $query = "
+                select
+                    regimenfiscal
+                from
+                    sat_tcatregimenfiscal
+                where
+                    idregimenfiscal = '".$idregimenfiscal."'";
+                $regimenfiscal = mysqli_fetch_assoc(mysqli_query($this->con,$query))["regimenfiscal"];
+
+                if(empty($usocfdi)){
+                    throw new Exception("Debes indicar el uso del CFDI");
+                }
+                if(empty($regimenfiscal)){
+                    throw new Exception("Debes indicar el régimen fiscal del receptor");
+                }
+            }
+
+            if($nuevarazonsocial && $idcliente > 0){
+                $query = "
+                insert
+                into
+                    tclienterazonessociales
+                (
+                    idcliente,
+                    razon_social,
+                    rfc,
+                    idusocfdi,
+                    usocfdi,
+                    idregimenfiscal,
+                    regimenfiscal,
+                    codigo_postal
+                ) values (
+                    '".$idcliente."',
+                    '".$razonsocial."',
+                    '".$rfc."',
+                    '".$idusocfdi."',
+                    '".$usocfdi."',
+                    '".$idregimenfiscal."',
+                    '".$regimenfiscal."',
+                    '".$codigo_postal."'
+                )";
+                mysqli_query($this->con,$query);
+                $idrazonsocial = mysqli_insert_id($this->con);
+            }
+
+            if((int)$idrazonsocial > 0){
+                $query = "
+                select
+                    *
+                from
+                    tclienterazonessociales
+                where
+                    idrazonsocial = '".(int)$idrazonsocial."'".(($idcliente > 0) ? " and idcliente = '".$idcliente."'" : "");
+                $tmp = mysqli_fetch_assoc(mysqli_query($this->con,$query));
+
+                if(!$tmp){
+                    throw new Exception("La razón social seleccionada no pertenece al cliente");
+                }
+            }else{
+                $idrazonsocial = 0;
+                $tmp = array(
+                    "rfc" => $rfc,
+                    "razon_social" => $razonsocial,
+                    "usocfdi" => $usocfdi,
+                    "regimenfiscal" => $regimenfiscal,
+                    "codigo_postal" => $codigo_postal
+                );
+            }
+
+            $receptor = array(
+                "Rfc" => $tmp["rfc"],
+                "Nombre" => utf8_decode(trim($tmp["razon_social"])),
+                "UsoCFDI" => $tmp["usocfdi"],
+                "DomicilioFiscalReceptor" => $tmp["codigo_postal"],
+                "RegimenFiscalReceptor" => $tmp["regimenfiscal"]
+            );
+
+            // Emisor, serie y folio
+            $query = "
+            select
+                a.rfc,
+                a.razon_social,
+                a.codigo_postal,
+                b.regimenfiscal,
+                a.serie,
+                a.folio
+            from
+                temisores a
+            left join
+                sat_tcatregimenfiscal b
+            on
+                b.idregimenfiscal = a.idregimenfiscal
+            where
+                a.idemisor = '".$idemisor."'";
+            $tmp = mysqli_fetch_assoc(mysqli_query($this->con,$query));
+
+            if(!$tmp){
+                throw new Exception("Debes indicar un emisor");
+            }
+
+            $serie = $tmp["serie"];
+            $folio = $tmp["folio"];
+
+            $emisor = array(
+                "Rfc" => $tmp["rfc"],
+                "Nombre" => utf8_decode(trim($tmp["razon_social"])),
+                "RegimenFiscal" => $tmp["regimenfiscal"],
+                "LugarExpedicion" => $tmp["codigo_postal"]
+            );
+
+            $ruta = $_SERVER["DOCUMENT_ROOT"]."/emisores/".str_replace("&","_",$tmp["rfc"]);
+
+            if(!file_exists($ruta."/sat/certificado.cer") || !file_exists($ruta."/sat/llave.key.pem")){
+                throw new Exception("No se encontraron los archivos del certificado del emisor");
+            }
+
+            $numero_certificado = $this->obtenerNumeroCertificado($ruta."/sat/certificado.cer");
+            $certificado = $this->obtenerContenidoCertificado($ruta."/sat/certificado.cer");
+            $archivo_keypem = file_get_contents($ruta."/sat/llave.key.pem");
+
+            // La tienda da el logo del PDF y la cuenta desde la que sale el correo
+            $query = "
+            select
+                idtienda
+            from
+                ttiendas
+            where
+                idtienda = '".$idtienda."'";
+            if(!($idtienda > 0) || mysqli_num_rows(mysqli_query($this->con,$query)) == 0){
+                throw new Exception("Debes indicar la tienda");
+            }
+
+            // Método y forma de pago
+            $query = "
+            select
+                metodopago
+            from
+                sat_tcatmetodospago
+            where
+                idmetodopago = '".$idmetodopago."'";
+            $metodopago = mysqli_fetch_assoc(mysqli_query($this->con,$query))["metodopago"];
+
+            $query = "
+            select
+                formapago
+            from
+                sat_tcatformaspago
+            where
+                idformapago = '".$idformapago."'";
+            $formapago = mysqli_fetch_assoc(mysqli_query($this->con,$query))["formapago"];
+
+            if(empty($metodopago) || empty($formapago)){
+                throw new Exception("Debes indicar el método y la forma de pago");
+            }
+
+            if($metodopago=="PUE" && $formapago=="99"){
+                throw new Exception("Con método de pago PUE la forma de pago no puede ser 99 - Por definir");
+            }
+
+            $logo = $_SERVER["DOCUMENT_ROOT"]."/imagenes/tiendas/".$idtienda."_logo.png";
+            $logo = "data:image/png;base64,".((file_exists($logo)) ? base64_encode(file_get_contents($logo)) : base64_encode(file_get_contents($_SERVER["DOCUMENT_ROOT"]."/assets/images/logo-uniformes-trazo.png")));
+
+            $datos = array(
+                "api_key" => "tek_npzimyh2ajjxpj3p3j2ofozt7c6deej9uu",
+                "Version" => "4.0",
+                "pruebas" => $this->pruebas,
+                "numero_certificado" => $numero_certificado,
+                "certificado" => $certificado,
+                "keypem" => $archivo_keypem,
+                "colortxt" => "000000",
+                "logo" => $logo,
+                "tipoComprobante" => "I",
+                "serie" => $serie,
+                "folio" => $folio,
+                "emisor" => $emisor,
+                "receptor" => $receptor,
+                "conceptos" => $conceptos_factura,
+                "subtotal" => $subtotal,
+                "iva_trasladado" => $impuesto["iva_trasladado"],
+                "metodopago" => $metodopago,
+                "formapago" => $formapago,
+                "moneda" => "MXN",
+                "tipo_cambio" => "1",
+                "carta_porte" => false,
+                "comentarios" => $comentarios
+            );
+
+            $curl = curl_init();
+
+            curl_setopt_array($curl, array(
+                CURLOPT_URL => "https://api.xptk.app/timbrador/index.php",
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_ENCODING => '',
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_TIMEOUT => 0,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_CUSTOMREQUEST => 'POST',
+                CURLOPT_POSTFIELDS => http_build_query($datos),
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_HTTPHEADER => array(
+                    'Authorization: CH60NP5HQZYUPZEQ'
+                ),
+            ));
+
+            $response = curl_exec($curl);
+            $errorcurl = curl_error($curl);
+            curl_close($curl);
+
+            file_put_contents($_SERVER["DOCUMENT_ROOT"]."/txts/facturarDirecta.txt",print_r($datos,true)."\n\n".print_r($response,true));
+
+            if($response===false){
+                throw new Exception("Error de conexión con el timbrador: ".$errorcurl);
+            }
+
+            $response = json_decode($response,true);
+
+            if($response===null){
+                throw new Exception("Respuesta inválida del timbrador");
+            }
+
+            if($response["response"]!=true){
+                throw new Exception("La factura no pudo ser timbrada (".$response["mensaje"].")");
+            }
+
+            $subtotal_cfdi = round((float)$response["subtotal"],2);
+            $total_cfdi = round((float)$response["total"],2);
+            $iva_cfdi = round($total_cfdi - $subtotal_cfdi,2);
+
+            $sinrazonsocial = !($idrazonsocial > 0);
+
+            mysqli_begin_transaction($this->con);
+
+            $query = "
+            insert
+            into
+                tfacturas
+            (
+                idusuario,
+                ".(($idcliente > 0) ? "idcliente," : "")."
+                ".(($idrazonsocial > 0) ? "idrazonsocial," : "")."
+                ".(($sinrazonsocial) ? "razonsocial, rfc, codigo_postal, regimenfiscal, usocfdi," : "")."
+                idemisor,
+                idmetodopago,
+                idformapago,
+                serie,
+                folio,
+                subtotal,
+                iva,
+                total,
+                saldo,
+                uuid,
+                timbrado,
+                directa,
+                idtienda,
+                tasaiva
+            ) values (
+                '".$idusuario."',
+                ".(($idcliente > 0) ? "'".$idcliente."'," : "")."
+                ".(($idrazonsocial > 0) ? "'".(int)$idrazonsocial."'," : "")."
+                ".(($sinrazonsocial) ? "'".$razonsocial."', '".$rfc."', '".$codigo_postal."', '".$regimenfiscal."', '".$usocfdi."'," : "")."
+                '".$idemisor."',
+                '".$idmetodopago."',
+                '".$idformapago."',
+                '".mysqli_real_escape_string($this->con,$serie)."',
+                '".(int)$folio."',
+                '".$subtotal_cfdi."',
+                '".$iva_cfdi."',
+                '".$total_cfdi."',
+                '".$total_cfdi."',
+                '".$response["uuid"]."',
+                '".$response["fechaTimbrado"]."',
+                1,
+                '".$idtienda."',
+                '".$tasaiva."'
+            )";
+            $ok = mysqli_query($this->con,$query);
+
+            $idfactura = mysqli_insert_id($this->con);
+
+            foreach($conceptos as $concepto){
+                $query = "
+                insert
+                into
+                    tfacturasconceptos
+                (
+                    idfactura,
+                    cantidad,
+                    claveprodserv,
+                    claveunidad,
+                    descripcion,
+                    valor_unitario,
+                    importe
+                ) values (
+                    '".$idfactura."',
+                    '".$concepto["cantidad"]."',
+                    '".mysqli_real_escape_string($this->con,$concepto["claveprodserv"])."',
+                    '".mysqli_real_escape_string($this->con,$concepto["claveunidad"])."',
+                    '".mysqli_real_escape_string($this->con,$concepto["descripcion"])."',
+                    '".$concepto["valor_unitario"]."',
+                    '".$concepto["importe"]."'
+                )";
+                $ok = $ok && mysqli_query($this->con,$query);
+            }
+
+            $query = "
+            update
+                temisores
+            set
+                folio = folio + 1
+            where
+                idemisor = '".$idemisor."'";
+            $ok = $ok && mysqli_query($this->con,$query);
+
+            if(!$ok){
+                mysqli_rollback($this->con);
+                throw new Exception("El timbrado fue exitoso pero ocurrió un error al guardar los datos. Contacta a soporte antes de volver a intentar, porque el CFDI ya existe ante el SAT (UUID ".$response["uuid"].")");
+            }
+
+            mysqli_commit($this->con);
+
+            if(!is_dir($ruta."/facturas")){
+                mkdir($ruta."/facturas", 0775, true);
+            }
+
+            file_put_contents($ruta."/facturas/".$response["uuid"].".xml",base64_decode($response["xml"]));
+            file_put_contents($ruta."/facturas/".$response["uuid"].".pdf",base64_decode($response["pdf"]));
+
+            if($idcliente > 0){
+                $correosArr = array_values(array_filter(array_map('trim', explode(',', $correo))));
+                $correoMain = mysqli_real_escape_string($this->con, $correosArr[0] ?? '');
+                $correosAdicionales = mysqli_real_escape_string($this->con, implode(',', array_slice($correosArr, 1)));
+                $query = "update tclientes set correo = '".$correoMain."', correos_adicionales = '".$correosAdicionales."' where idcliente = '".$idcliente."'";
+                mysqli_query($this->con, $query);
+            }
+
+            // Se envía la factura por correo
+            $folio = $serie."-".$folio;
+            $fecha = date("Y-m-d");
+            $total = $total_cfdi;
+
+            include($_SERVER["DOCUMENT_ROOT"]."/assets/plantillas/correo/envioFactura.php");
+            include($_SERVER["DOCUMENT_ROOT"]."/assets/plantillas/correo/base.php");
+
+            include_once($_SERVER["DOCUMENT_ROOT"]."/assets/php/clases/Correos.php");
+            $claseCorreos = new Correos();
+
+            $correos = array_values(array_filter(array_map('trim', explode(',', $correo))));
+            if(!empty($correoAdicional)){
+                $correosExtra = array_values(array_filter(array_map('trim', explode(',', $correoAdicional))));
+                $correos = array_merge($correos, $correosExtra);
+            }
+
+            $envio = $claseCorreos->enviarCorreo(array(
+                "idtienda" => $idtienda,
+                "asunto" => "Envío de factura",
+                "mensaje" => $cuerpo,
+                "correos" => $correos,
+                "adjuntos" => array(
+                    array("nombre" => $response["uuid"].".xml", "archivo" => $response["xml"]),
+                    array("nombre" => $response["uuid"].".pdf", "archivo" => $response["pdf"])
+                )
+            ));
+
+            $respuesta = array(
+                "respuesta" => "OK",
+                "tipo" => "mensajecargar",
+                "titulo" => "Factura generada",
+                "mensaje" => "Se ha generado la factura ".$folio." por $".number_format($total_cfdi,2).(($envio["result"]=="success") ? " y se ha enviado por correo" : " pero no se pudo enviar por correo (".$envio["mensaje"].")"),
+                "formulario" => "formBusqueda"
+            );
+        }catch(Exception $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje" => $e->getMessage()
+            );
+        }catch(Throwable $e){
+            $respuesta = array(
+                "respuesta" => "ERROR",
+                "mensaje" => "Ocurrió un error al generar la factura: ".$e->getMessage()
+            );
+        }finally{
+            return $respuesta;
+        }
+    }
+
+    /**
+     * Revisa que una clave exista en un catálogo del SAT (productos y servicios o unidades
+     * de medida), para no mandar al timbrador una clave que el PAC va a rechazar.
+     *
+     * @access private
+     * @param string $tabla
+     * @param string $clave
+     * @return boolean
+     */
+    private function existeClaveSAT($tabla, $clave){
+        if($clave == ""){
+            return false;
+        }
+
+        $query = "
+        select
+            clave
+        from
+            ".$tabla."
+        where
+            clave = '".mysqli_real_escape_string($this->con,$clave)."'
+        limit 1";
+        $result = mysqli_query($this->con,$query);
+
+        return ($result && mysqli_num_rows($result) > 0);
+    }
+
+    /**
+     * Número de certificado de un archivo .cer
+     *
+     * @access private
+     * @param string $certificado Ruta del archivo .cer
+     * @return string
+     */
+    private function obtenerNumeroCertificado($certificado){
+        $numero = "";
+        exec("openssl x509 -inform DER -in $certificado -serial", $datacer);
+        // El serial viene como "serial=3230303031..." y el número son los dígitos en
+        // posiciones impares
+        $serialnumbers = str_split(str_replace("serial=", "", $datacer[0]));
+        for($i = 0; $i < count($serialnumbers); $i++){
+            if($i % 2 != 0){
+                $numero .= $serialnumbers[$i];
+            }
+        }
+        return $numero;
+    }
+
+    /**
+     * Contenido del certificado sin las líneas de encabezado y cierre
+     *
+     * @access private
+     * @param string $certificado Ruta del archivo .cer
+     * @return string
+     */
+    private function obtenerContenidoCertificado($certificado){
+        exec("openssl x509 -inform DER -in $certificado", $cer);
+        array_pop($cer);
+        array_shift($cer);
+        return implode($cer);
     }
 
 }

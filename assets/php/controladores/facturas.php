@@ -35,6 +35,20 @@ try{
         case "verificarEstatusSAT":
             $respuesta = $claseFacturas->verificarEstatusSAT($_POST);
         break;
+        case "facturarDirecta":
+            if($_POST["authToken"]==$_SESSION["authToken"]){
+                $respuesta = $claseFacturas->facturarDirecta($_POST);
+            }else{
+                $respuesta = $arrayerror;
+            }
+        break;
+        case "datosClienteFacturacion":
+            if($claseFacturas->puedeEmitirDirectas($idusuario)){
+                $respuesta = $claseFacturas->getDatosClienteFacturacion($_POST["idcliente"]);
+            }else{
+                $respuesta = $arrayerror;
+            }
+        break;
         default: $respuesta = $arrayerror; break;
     }
     
